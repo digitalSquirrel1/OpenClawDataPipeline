@@ -34,7 +34,7 @@ _PROFILES_DIR = _OUTPUTS_DIR / "profiles"
 LLM_API_KEY = os.getenv("LLM_API_KEY", "sk-U2BkWhBzdLcJn01ovsXXESVO2nboXEjKqjj8WxECS6Dom5UZ")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.gptplus5.com/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5.2")
-LLM_PROXY = os.getenv("LLM_PROXY", "http://10.90.91.193:3127")
+LLM_PROXY = os.getenv("LLM_PROXY", None)
 
 # ─── 用户画像生成提示词 ─────────────────────────────────────────────────────────
 PROFILE_GENERATION_PROMPT = """请生成三个完全不同的用户档案，记录用户的基本信息，如姓名，性别，年龄，性格，职业，家庭身体情况，生活与学习中的喜好，常用的电脑软件工具与网站等，每份档案各项信息差别要大。
