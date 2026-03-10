@@ -2,20 +2,16 @@
 """
 user_simulator_agent — main entry point
 ========================================
-配置 API 密钥后，读取 user_profile.txt，自动完成：
+读取 user_profile，自动完成：
   1. 解析用户画像
   2. 设计电脑环境规格（目录结构 + 文件列表 + env_config）
   3. 生成 / 下载所有文件
   4. 输出 env_config.json
   5. 生成 user_agent.py
-  6. 打包为 computer_profile.zip
+  6. 打包为 zip
 
-输出目录：./output/
-  ├── computer_profile/     ← 模拟电脑文件系统
-  │   ├── env_config.json
-  │   └── D/研究资料/...
-  ├── computer_profile.zip  ← 打包版
-  └── user_agent.py         ← 用户代理脚本
+核心 API：
+  run_pipeline(user_profile_path, output_dir, profile_dir_name=None)
 """
 
 import os, sys, json, zipfile, time
@@ -30,32 +26,20 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# ─── ① 在此配置 API 密钥（也可通过环境变量覆盖） ──────────────────────────────
-# OpenAI-compatible 后端（默认）
-LLM_API_KEY  = os.getenv("LLM_API_KEY",  "sk-U2BkWhBzdLcJn01ovsXXESVO2nboXEjKqjj8WxECS6Dom5UZ")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.gptplus5.com/v1")
-LLM_MODEL    = os.getenv("LLM_MODEL",    "gpt-4o")
-# Anthropic 后端（若 OpenAI 接口不可用，设置 LLM_BACKEND=anthropic
-#   并在环境变量中设置 ANTHROPIC_API_KEY 即可切换）
-LLM_BACKEND  = os.getenv("LLM_BACKEND",  "openai")   # "openai" | "anthropic"
+# ─── 路径设置 ──────────────────────────────────────────────────────────────────
+_WORKING_SPACE = Path(__file__).resolve().parent         # WorkingSpace/
+_PROJECT_ROOT  = _WORKING_SPACE.parent                    # user_simulator_agent/
 
-SERPER_KEY   = os.getenv("SERPER_KEY",   "c18083640ab538baeab47710fe7a93d7f987b754")
-JINA_KEY     = os.getenv("JINA_KEY",     "jina_8c9997a799d3462c883b72ac03d53330B2HEHAGXvdyZDKuetE2i0PWOCJeV")
+# 把 WorkingSpace 和 project root 都加到 sys.path，保证 utils.* / agents.* / config.* / shared.* 都能导入
+if str(_WORKING_SPACE) not in sys.path:
+    sys.path.insert(0, str(_WORKING_SPACE))
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-# ─── 并发控制（线程数）──────────────────────────────────────────────────────────
-# MAX_WORKERS: 并行下载/生成文件的线程数（I/O密集型，8线程合适）
-MAX_WORKERS  = int(os.getenv("MAX_WORKERS", "8"))
-
-# ─── ② 输入 / 输出路径 ────────────────────────────────────────────────────────
-USER_PROFILE_PATH = "user_profile.txt"
-OUTPUT_DIR        = "output"
-
-# ─── 路径修正（保证从项目根目录运行） ─────────────────────────────────────────
-_ROOT = Path(__file__).parent
-sys.path.insert(0, str(_ROOT))
-os.chdir(_ROOT)
+from config.config_loader import load_config
 
 
+# ── helpers ────────────────────────────────────────────────────────────────────
 def _banner(msg: str) -> None:
     print("\n" + "═" * 60)
     print(f"  {msg}")
@@ -70,82 +54,11 @@ def _zip_dir(src_dir: Path, zip_path: Path) -> None:
     print(f"  → 打包完成：{zip_path}  ({zip_path.stat().st_size // 1024} KB)")
 
 
-def main() -> None:
-    t0 = time.time()
-    _banner("user_simulator_agent 启动")
-
-    # ── 导入子模块 ──────────────────────────────────────────────────────────
-    from utils.llm_client          import LLMClient
-    from utils.web_tools           import WebTools
-    from agents.profile_analyzer   import ProfileAnalyzer
-    from agents.computer_spec_designer import ComputerSpecDesigner
-    from agents.file_processor     import FileProcessor
-    from agents.user_agent_builder import UserAgentBuilder
-
-    # ── 初始化工具 ──────────────────────────────────────────────────────────
-    llm = LLMClient(LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, backend=LLM_BACKEND)
-    web = WebTools(SERPER_KEY, JINA_KEY)
-
-    # ── 读取用户画像 ────────────────────────────────────────────────────────
-    profile_path = Path(USER_PROFILE_PATH)
-    if not profile_path.exists():
-        sys.exit(f"[Error] 找不到 {USER_PROFILE_PATH}，请先创建该文件。")
-    profile_text = profile_path.read_text(encoding="utf-8")
-    print(f"\n[读取] {USER_PROFILE_PATH} ({len(profile_text)} chars)")
-
-    # ── Step 1：分析用户画像 ────────────────────────────────────────────────
-    _banner("Step 1 / 4  分析用户画像")
-    analyzer = ProfileAnalyzer(llm)
-    profile  = analyzer.analyze(profile_text)
-
-    # ── Step 2：设计电脑环境规格 ────────────────────────────────────────────
-    _banner("Step 2 / 4  设计电脑环境")
-    designer = ComputerSpecDesigner(llm)
-    spec     = designer.design(profile)
-
-    # ── 创建输出目录 ────────────────────────────────────────────────────────
-    out_dir = Path(OUTPUT_DIR)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    profile_dir = out_dir / "computer_profile"
-    profile_dir.mkdir(exist_ok=True)
-
-    # ── Step 3：生成文件系统 ─────────────────────────────────────────────────
-    _banner("Step 3 / 4  生成文件 & 目录")
-    processor = FileProcessor(llm, web, str(out_dir), max_workers=MAX_WORKERS)
-    created   = processor.process(spec, profile)
-
-    # ── 写入 env_config.json ─────────────────────────────────────────────────
-    env_cfg = spec.get("env_config", {})
-    env_path = profile_dir / "env_config.json"
-    env_path.write_text(
-        json.dumps(env_cfg, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"\n  → env_config.json 已写入")
-
-    # ── 写入 README（说明文件） ──────────────────────────────────────────────
-    readme = _build_readme(profile, spec, created)
-    (profile_dir / "README.md").write_text(readme, encoding="utf-8")
-
-    # ── Step 4：生成 user_agent.py ───────────────────────────────────────────
-    _banner("Step 4 / 4  生成 user_agent.py")
-    builder    = UserAgentBuilder(llm, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL)
-    agent_code = builder.build(profile, spec)
-    agent_path = out_dir / "user_agent.py"
-    builder.save(agent_code, str(agent_path))
-
-    # ── 打包 computer_profile.zip ────────────────────────────────────────────
-    zip_path = out_dir / "computer_profile.zip"
-    _zip_dir(profile_dir, zip_path)
-
-    # ── 完成汇总 ─────────────────────────────────────────────────────────────
-    elapsed = time.time() - t0
-    _banner("完成 [OK]")
-    print(f"\n  模拟角色    : {profile.get('name')}（{profile.get('role')}）")
-    print(f"  创建文件数  : {len(created)}")
-    print(f"  耗时        : {elapsed:.1f} 秒\n")
-    print(f"  📁 computer_profile.zip : {zip_path}")
-    print(f"  🤖 user_agent.py        : {agent_path}")
-    print()
+def _sanitize_name(name: str) -> str:
+    """移除 Windows 目录名中不允许的字符。"""
+    for ch in r'\/:*?"<>|':
+        name = name.replace(ch, "_")
+    return name.strip()
 
 
 def _build_readme(profile: dict, spec: dict, created: list) -> str:
@@ -177,6 +90,153 @@ def _build_readme(profile: dict, spec: dict, created: list) -> str:
         "*Generated by user_simulator_agent*",
     ]
     return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  核心 pipeline（可从外部 import 调用）
+# ══════════════════════════════════════════════════════════════════════════════
+def run_pipeline(
+    user_profile_path: Path | str,
+    output_dir: Path | str,
+    profile_dir_name: str | None = None,
+) -> dict:
+    """
+    执行完整的 4 步 pipeline。
+
+    Args:
+        user_profile_path:  用户画像文件（txt 或 json），绝对路径
+        output_dir:         输出根目录（绝对路径）
+        profile_dir_name:   生成的文件系统子目录名。
+                            为 None 时自动从分析结果推导（"姓名_职业"）。
+
+    Returns:
+        dict  包含 profile_name、profile、created_files、output_dir 等
+    """
+    t0 = time.time()
+    _banner("user_simulator_agent 启动")
+
+    # ── 导入子模块 ──────────────────────────────────────────────────────────
+    from utils.llm_client            import LLMClient
+    from utils.web_tools             import WebTools
+    from agents.profile_analyzer     import ProfileAnalyzer
+    from agents.computer_spec_designer import ComputerSpecDesigner
+    from agents.file_processor       import FileProcessor
+    from agents.user_agent_builder   import UserAgentBuilder
+
+    # ── 读取配置 ──────────────────────────────────────────────────────────
+    cfg      = load_config()
+    api_cfg  = cfg.get("api_config", {})
+    web_cfg  = cfg.get("web_tools_config", {})
+    pipe_cfg = cfg.get("pipeline_config", {})
+
+    llm_api_key  = os.getenv("LLM_API_KEY",  api_cfg.get("LLM_API_KEY", ""))
+    llm_base_url = os.getenv("LLM_BASE_URL", api_cfg.get("LLM_BASE_URL", ""))
+    llm_model    = os.getenv("LLM_MODEL",    api_cfg.get("LLM_MODEL", "gpt-4o"))
+    llm_backend  = os.getenv("LLM_BACKEND",  api_cfg.get("LLM_BACKEND", "openai"))
+    serper_key   = os.getenv("SERPER_KEY",    web_cfg.get("SERPER_KEY", ""))
+    jina_key     = os.getenv("JINA_KEY",      web_cfg.get("JINA_KEY", ""))
+    max_workers  = int(os.getenv("MAX_WORKERS", str(pipe_cfg.get("MAX_WORKERS", 8))))
+
+    # ── 初始化工具 ──────────────────────────────────────────────────────────
+    llm = LLMClient(llm_api_key, llm_base_url, llm_model, backend=llm_backend)
+    web = WebTools(serper_key, jina_key)
+
+    # ── 读取用户画像 ────────────────────────────────────────────────────────
+    user_profile_path = Path(user_profile_path)
+    if not user_profile_path.exists():
+        sys.exit(f"[Error] 找不到 {user_profile_path}")
+    profile_text = user_profile_path.read_text(encoding="utf-8")
+    print(f"\n[读取] {user_profile_path} ({len(profile_text)} chars)")
+
+    # ── Step 1：分析用户画像 ────────────────────────────────────────────────
+    _banner("Step 1 / 4  分析用户画像")
+    analyzer = ProfileAnalyzer(llm)
+    profile  = analyzer.analyze(profile_text)
+
+    # ── 确定 profile 目录名（替代原来的 "computer_profile"） ────────────────
+    if not profile_dir_name:
+        profile_dir_name = _sanitize_name(
+            f"{profile.get('name', 'user')}_{profile.get('role', 'unknown')}"
+        )
+
+    # ── Step 2：设计电脑环境规格 ────────────────────────────────────────────
+    _banner("Step 2 / 4  设计电脑环境")
+    designer = ComputerSpecDesigner(llm)
+    spec     = designer.design(profile)
+
+    # ── 创建输出目录 ────────────────────────────────────────────────────────
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    profile_dir = out_dir / profile_dir_name
+    profile_dir.mkdir(exist_ok=True)
+
+    # ── Step 3：生成文件系统 ─────────────────────────────────────────────────
+    _banner("Step 3 / 4  生成文件 & 目录")
+    processor = FileProcessor(llm, web, str(out_dir), max_workers=max_workers)
+    created   = processor.process(spec, profile, profile_dir_name=profile_dir_name)
+
+    # ── 写入 env_config.json ─────────────────────────────────────────────────
+    env_cfg = spec.get("env_config", {})
+    env_path = profile_dir / "env_config.json"
+    env_path.write_text(
+        json.dumps(env_cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"\n  → env_config.json 已写入")
+
+    # ── 写入 README ──────────────────────────────────────────────────────────
+    readme = _build_readme(profile, spec, created)
+    (profile_dir / "README.md").write_text(readme, encoding="utf-8")
+
+    # ── Step 4：生成 user_agent.py ───────────────────────────────────────────
+    _banner("Step 4 / 4  生成 user_agent.py")
+    builder    = UserAgentBuilder(llm, llm_api_key, llm_base_url, llm_model)
+    agent_code = builder.build(profile, spec)
+    agent_path = out_dir / "user_agent.py"
+    builder.save(agent_code, str(agent_path))
+
+    # ── 打包 zip ─────────────────────────────────────────────────────────────
+    zip_path = out_dir / f"{profile_dir_name}.zip"
+    _zip_dir(profile_dir, zip_path)
+
+    # ── 完成汇总 ─────────────────────────────────────────────────────────────
+    elapsed = time.time() - t0
+    _banner("完成 [OK]")
+    print(f"\n  模拟角色    : {profile.get('name')}（{profile.get('role')}）")
+    print(f"  创建文件数  : {len(created)}")
+    print(f"  耗时        : {elapsed:.1f} 秒\n")
+    print(f"  📁 {profile_dir_name}.zip : {zip_path}")
+    print(f"  🤖 user_agent.py        : {agent_path}")
+    print()
+
+    return {
+        "profile_dir_name": profile_dir_name,
+        "profile": profile,
+        "created_files": created,
+        "output_dir": str(out_dir),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  独立运行入口
+# ══════════════════════════════════════════════════════════════════════════════
+def main() -> None:
+    cfg      = load_config()
+    pipe_cfg = cfg.get("pipeline_config", {})
+
+    user_profile_path = Path(
+        os.getenv("USER_PROFILE_PATH", pipe_cfg.get("USER_PROFILE_PATH", "user_profile.txt"))
+    )
+    output_dir = Path(
+        os.getenv("OUTPUT_DIR", pipe_cfg.get("OUTPUT_DIR", "output"))
+    )
+
+    # 独立运行时，相对路径基于 WorkingSpace/
+    if not user_profile_path.is_absolute():
+        user_profile_path = _WORKING_SPACE / user_profile_path
+    if not output_dir.is_absolute():
+        output_dir = _WORKING_SPACE / output_dir
+
+    run_pipeline(user_profile_path, output_dir)
 
 
 if __name__ == "__main__":

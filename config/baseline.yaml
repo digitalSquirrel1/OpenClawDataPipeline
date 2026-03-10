@@ -3,15 +3,25 @@ api_config:
   LLM_BASE_URL: "https://api.gptplus5.com/v1"
   LLM_MODEL: "gpt-5.2"
   LLM_PROXY: null
+  LLM_BACKEND: "openai"   # "openai" | "anthropic"
 
-generate_user_profile_config:
+web_tools_config:
+  SERPER_KEY: "c18083640ab538baeab47710fe7a93d7f987b754"
+  JINA_KEY: "jina_8c9997a799d3462c883b72ac03d53330B2HEHAGXvdyZDKuetE2i0PWOCJeV"
+
+pipeline_config:           # main.py 运行参数
+  MAX_WORKERS: 8           # 并行下载/生成文件的线程数
+  USER_PROFILE_PATH: "user_profile.txt"   # 独立运行 main.py 时的默认输入
+  OUTPUT_DIR: "output"                     # 独立运行 main.py 时的默认输出
+
+generate_user_profile_config: # 生成user profile
   PROFILE_GENERATION_PROMPT: "prompts/profile_generation_prompt.md"
   output_dir: null   # null → defaults to Outputs/profiles/
   count: 3
 
-batch_generate_config:
-  profiles_dir: null   # null → defaults to Outputs/profiles/
-  envs_dir: null       # null → defaults to Outputs/environments/
+batch_generate_config: # 根据user_profile生成environment
+  profiles_dir: null              # null → defaults to Outputs/profiles/
+  envs_dir: "Outputs/environments"  # 相对于 user_simulator_agent/ 的路径
   pattern: "*.json"
   skip_existing: false
 

@@ -2,16 +2,16 @@
 """
 批量环境生成器
 ===============
-遍历 Outputs/profiles 目录中的用户画像 JSON 文件，批量调用 WorkingSpace/main.py 生成环境。
+遍历 Outputs/profiles 目录中的用户画像 JSON 文件，
+直接调用 WorkingSpace/main.py 的 run_pipeline() 生成环境。
 
 使用方式：
   python batch_generate.py
   python batch_generate.py --profiles-dir Outputs/profiles
 """
 
-import os, sys, json, argparse, subprocess
+import os, sys, json, argparse
 from pathlib import Path
-from datetime import datetime
 
 # 支持中文字符显示
 if sys.platform == "win32":
@@ -22,28 +22,42 @@ if sys.platform == "win32":
         pass
 
 # ─── 项目路径设置 ───────────────────────────────────────────────────────────────
-_CONTROL_CENTER = Path(__file__).parent
-_PROJECT_ROOT = _CONTROL_CENTER.parent
-_WORKING_SPACE = _PROJECT_ROOT / "WorkingSpace"
-_MAIN_SCRIPT = _WORKING_SPACE / "main.py"
+_CONTROL_CENTER = Path(__file__).resolve().parent
+_PROJECT_ROOT   = _CONTROL_CENTER.parent              # user_simulator_agent/
+_WORKING_SPACE  = _PROJECT_ROOT / "WorkingSpace"
 
 # 默认路径配置
 DEFAULT_PROFILES_DIR = _PROJECT_ROOT / "Outputs" / "profiles"
-DEFAULT_ENVS_DIR = _PROJECT_ROOT / "Outputs" / "environments"
+DEFAULT_ENVS_DIR     = _PROJECT_ROOT / "Outputs" / "environments"
 
-# ─── 加载配置 ──────────────────────────────────────────────────────────────────
-sys.path.insert(0, str(_PROJECT_ROOT))
+# ─── 加载配置 & 导入 pipeline ─────────────────────────────────────────────────
+# 把 project root 和 WorkingSpace 都加到 sys.path
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+if str(_WORKING_SPACE) not in sys.path:
+    sys.path.insert(0, str(_WORKING_SPACE))
+
 from config.config_loader import load_config
+from main import run_pipeline          # ← 直接 import，不再用 subprocess
 
 _cfg = load_config()
 _batch_cfg = _cfg.get("batch_generate_config", {})
 
 
+# ─── 工具函数 ─────────────────────────────────────────────────────────────────
+def _resolve(val: str | None, default: Path) -> str:
+    """将 yaml 中的路径解析为绝对路径（相对路径以 _PROJECT_ROOT 为基准）。"""
+    if not val:
+        return str(default)
+    p = Path(val)
+    return str(p if p.is_absolute() else _PROJECT_ROOT / p)
+
+
 def parse_args():
     """解析命令行参数（默认值从 config/baseline.yaml 读取）"""
-    profiles_dir_default = _batch_cfg.get("profiles_dir") or str(DEFAULT_PROFILES_DIR)
-    envs_dir_default     = _batch_cfg.get("envs_dir")     or str(DEFAULT_ENVS_DIR)
-    pattern_default      = _batch_cfg.get("pattern")      or "*.json"
+    profiles_dir_default  = _resolve(_batch_cfg.get("profiles_dir"), DEFAULT_PROFILES_DIR)
+    envs_dir_default      = _resolve(_batch_cfg.get("envs_dir"),     DEFAULT_ENVS_DIR)
+    pattern_default       = _batch_cfg.get("pattern")      or "*.json"
     skip_existing_default = bool(_batch_cfg.get("skip_existing", False))
 
     parser = argparse.ArgumentParser(
@@ -76,29 +90,23 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_profile_info(profile_path: Path) -> dict:
-    """从用户画像文件中提取基本信息，用于生成输出目录名"""
+def _sanitize_name(name: str) -> str:
+    """移除 Windows 目录名中不允许的字符。"""
+    for ch in r'\/:*?"<>|':
+        name = name.replace(ch, "_")
+    return name.strip()
+
+
+def get_profile_info(profile_path: Path) -> dict | None:
+    """从用户画像 JSON 文件中提取基本信息。"""
     try:
         with open(profile_path, "r", encoding="utf-8") as f:
             profile = json.load(f)
 
         basic = profile.get("基本信息", {})
-        name = basic.get("姓名", "unknown")
-        role = basic.get("职业", "unknown")
-
-        # 清理角色名称（移除特殊字符）
-        role_clean = (
-            role.replace(" ", "_")
-                .replace("/", "_")
-                .replace("\\", "_")
-                .replace(":", "_")
-                .replace("*", "_")
-                .replace("?", "_")
-                .replace('"', "_")
-                .replace("<", "_")
-                .replace(">", "_")
-                .replace("|", "_")
-        )
+        name  = basic.get("姓名", "unknown")
+        role  = basic.get("职业", "unknown")
+        role_clean = _sanitize_name(role)
 
         return {"name": name, "role": role_clean, "profile": profile}
     except Exception as e:
@@ -108,19 +116,16 @@ def get_profile_info(profile_path: Path) -> dict:
 
 def generate_env_for_profile(
     profile_path: Path,
-    output_dir: Path,
-    main_script: Path,
-    skip_existing: bool = False
+    envs_dir: Path,
+    skip_existing: bool = False,
 ) -> bool:
-    """为单个用户画像生成环境"""
-    # 提取画像信息
+    """为单个用户画像生成环境（直接调用 run_pipeline）。"""
     info = get_profile_info(profile_path)
     if not info:
         return False
 
-    # 生成输出子目录名
     env_name = f"{info['name']}_{info['role']}"
-    env_path = output_dir / env_name
+    env_path = envs_dir / env_name
 
     # 检查是否已存在
     if skip_existing and env_path.exists():
@@ -128,49 +133,19 @@ def generate_env_for_profile(
         return True
 
     print(f"  [处理] {env_name}")
+    print(f"    画像: {profile_path}")
     print(f"    输出: {env_path}")
 
-    # 构建 main.py 的调用命令
-    output_full_path = output_dir / env_name
-
-    # 转换为相对于 WorkingSpace 目录的路径
     try:
-        profile_arg = profile_path.relative_to(_WORKING_SPACE)
-    except ValueError:
-        profile_arg = profile_path
-
-    try:
-        output_arg = output_full_path.relative_to(_WORKING_SPACE)
-    except ValueError:
-        output_arg = output_full_path
-
-    cmd = [
-        sys.executable,
-        str(main_script),
-        "--user-profile", str(profile_arg),
-        "--output", str(output_arg)
-    ]
-
-    # 执行命令
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=str(_WORKING_SPACE),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace"
+        run_pipeline(
+            user_profile_path=profile_path,
+            output_dir=env_path,
+            profile_dir_name=env_name,
         )
-
-        if result.returncode == 0:
-            print(f"  [OK] {env_name} 生成成功")
-            return True
-        else:
-            print(f"  [FAIL] {env_name} 生成失败")
-            print(f"    stderr: {result.stderr[-500:]}")
-            return False
+        print(f"  [OK] {env_name} 生成成功")
+        return True
     except Exception as e:
-        print(f"  [Error] 执行失败: {e}")
+        print(f"  [FAIL] {env_name} 生成失败: {e}")
         return False
 
 
@@ -188,10 +163,6 @@ def main():
     # 检查路径
     if not profiles_dir.exists():
         print(f"\n[Error] 用户画像目录不存在: {profiles_dir}")
-        return 1
-
-    if not _MAIN_SCRIPT.exists():
-        print(f"\n[Error] main.py 不存在: {_MAIN_SCRIPT}")
         return 1
 
     # 创建输出目录
@@ -218,8 +189,7 @@ def main():
         success = generate_env_for_profile(
             profile_file,
             envs_dir,
-            _MAIN_SCRIPT,
-            skip_existing=args.skip_existing
+            skip_existing=args.skip_existing,
         )
 
         if success:

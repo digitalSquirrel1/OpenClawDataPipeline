@@ -216,8 +216,9 @@ class FileProcessor:
     # ──────────────────────────────────────────────────────────────────────────
     # Public entry
     # ──────────────────────────────────────────────────────────────────────────
-    def process(self, spec: dict, profile: dict) -> list[str]:
-        base  = self.output_dir / "computer_profile"
+    def process(self, spec: dict, profile: dict,
+                profile_dir_name: str = "computer_profile") -> list[str]:
+        base  = self.output_dir / profile_dir_name
         files = spec.get("files", [])
         total = len(files)
 
