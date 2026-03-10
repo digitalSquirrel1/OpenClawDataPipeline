@@ -1,8 +1,9 @@
-WorkingSpace/__pycache__/main.cpython-314.pyc
-ControlCenter/__pycache__/batch_generate.cpython-314.pyc
-ControlCenter/__pycache__/generate_user_profile.cpython-314.pyc
+# bytecode
+*.pyc
+__pycache__/
 # data
 Outputs/*
 WorkingSpace/output/*
 # logs
 Log/*
+WorkingSpace/output/
