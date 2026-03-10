@@ -53,9 +53,7 @@ PROMPT_PDF = """
 目录结构（可用路径）：
 {dirs_json}
 
-请为该用户设计 **20个** 可从公网下载的真实PDF文件。
-包含：上市车企年报（比亚迪/理想/蔚来/小鹏/广汽/上汽/吉利/长城/长安，多年份）、
-行业政策文件、券商研报、招股书。
+请为该用户设计 {file_count}个 可从公网下载的真实PDF文件。
 
 每个文件的 search_query 必须精准，能搜到真实可下载的PDF。
 
@@ -66,10 +64,10 @@ PROMPT_PDF = """
       "path": "D/研究资料/车企财报/比亚迪/2023/比亚迪2023年度报告.pdf",
       "type": "downloadable",
       "sub_type": "pdf",
-      "description": "比亚迪股份有限公司2023年度报告（H股，港交所披露）",
+      "description": "比亚迪股份有限公司2023年度报告（H股，港交所披露），包含公司财务状况、经营成果、现金流量表、股东权益变动表等完整财务信息，以及管理层讨论与分析部分，详细阐述了新能源汽车业务的发展战略和市场前景展望。",
       "search_query": "比亚迪 2023年度报告 site:hkexnews.hk filetype:pdf"
     }},
-    ...（共20个）
+    ...（共{file_count}个）
   ]
 }}
 """
@@ -81,8 +79,7 @@ PROMPT_HTML = """
 目录结构（可用路径）：
 {dirs_json}
 
-请为该用户设计 **10个** 可从公网下载保存的HTML网页文件。
-包含：重大行业新闻页、政策通知原文页、公司投资者关系页、行业数据统计页。
+请为该用户设计 {file_count}个 可从公网下载保存的HTML网页文件。
 
 输出 JSON（只有files数组）：
 {{
@@ -91,10 +88,10 @@ PROMPT_HTML = """
       "path": "D/网页存档/财经新闻/比亚迪2023年销量创历史记录.html",
       "type": "downloadable",
       "sub_type": "html",
-      "description": "比亚迪2023年全年销量创历史新高相关新闻页面",
+      "description": "比亚迪2023年全年销量创历史记录相关新闻页面，报道了比亚迪新能源汽车销量突破300万辆大关，创下中国汽车行业新纪录，详细分析了市场份额增长、产品线扩张以及国际化战略的成功实施情况。",
       "search_query": "比亚迪 2023年销量 302万辆 历史记录"
     }},
-    ...（共10个）
+    ...（共{file_count}个）
   ]
 }}
 """
@@ -106,8 +103,7 @@ PROMPT_EXCEL_CSV = """
 目录结构（可用路径）：
 {dirs_json}
 
-请为该用户设计 **6个** 可从公网下载的Excel/CSV数据文件。
-包含：CAAM或乘联会月度销量数据、政府能源局统计数据、上交所/深交所数据。
+请为该用户设计 {file_count}个 可从公网下载的Excel/CSV数据文件。
 
 输出 JSON（只有files数组）：
 {{
@@ -116,10 +112,10 @@ PROMPT_EXCEL_CSV = """
       "path": "D/数据分析/Wind导出/乘联会2023年月度销量.csv",
       "type": "downloadable",
       "sub_type": "csv",
-      "description": "乘联会2023年新能源乘用车月度零售销量数据",
+      "description": "乘联会2023年新能源乘用车月度零售销量数据统计表，包含各月份销量数据、环比同比变化、细分市场占比分析，以及新能源汽车市场渗透率趋势图表，帮助分析行业发展动态和竞争格局。",
       "search_query": "乘联会 新能源汽车 月度销量 2023 filetype:csv"
     }},
-    ...（共6个）
+    ...（共{file_count}个）
   ]
 }}
 """
@@ -131,8 +127,7 @@ PROMPT_DOCX = """
 目录结构（可用路径）：
 {dirs_json}
 
-请为该用户设计 **12个** 由用户自己创作的Word/文本文档文件（type=generated）。
-包含：财报分析笔记、会议纪要、调研记录、行业观察周报、内部汇报材料、联系人整理等。
+请为该用户设计 {file_count}个 由用户自己创作的Word/文本文档文件（type=generated）。
 format 可以是 docx 或 txt。
 
 输出 JSON（只有files数组）：
@@ -142,10 +137,10 @@ format 可以是 docx 或 txt。
       "path": "C/Users/{username}/Documents/工作笔记/比亚迪2023财报精读笔记.docx",
       "type": "generated",
       "format": "docx",
-      "description": "比亚迪2023年报精读笔记，含财务指标分析和投资要点",
+      "description": "比亚迪2023年报精读笔记，含财务指标分析和投资要点，详细剖析了公司营收结构、利润增长来源、新能源汽车销量贡献度、供应链优化成效，以及未来产能扩张计划和潜在投资风险评估。",
       "content_prompt": "生成一篇比亚迪2023年报精读笔记，包含：营收增长分析、毛利率变化、新车型销量贡献、海外市场拓展进展、主要投资风险。约1500字，专业券商研究风格。"
     }},
-    ...（共12个）
+    ...（共{file_count}个）
   ]
 }}
 """
@@ -157,8 +152,7 @@ PROMPT_XLSX = """
 目录结构（可用路径）：
 {dirs_json}
 
-请为该用户设计 **10个** 由用户整理的Excel/CSV数据表文件（type=generated）。
-包含：多车企财务指标对比、销量数据汇总、市场份额计算、DCF估值模型、Wind导出整理数据。
+请为该用户设计 {file_count}个 由用户整理的Excel/CSV数据表文件（type=generated）。
 format 可以是 xlsx 或 csv。
 
 输出 JSON（只有files数组）：
@@ -168,10 +162,10 @@ format 可以是 xlsx 或 csv。
       "path": "D/数据分析/Wind导出/新能源汽车月度销量2024.xlsx",
       "type": "generated",
       "format": "xlsx",
-      "description": "2024年1-11月中国新能源乘用车各品牌月度销量数据",
+      "description": "2024年1-11月中国新能源乘用车各品牌月度销量数据汇总表，包含比亚迪、特斯拉中国、理想、问界、小鹏、蔚来等主要品牌销量数据、月度环比增长率、年度累计销量对比，以及市场份额变化趋势分析。",
       "content_prompt": "生成2024年1-11月中国新能源乘用车月度销量数据，列：月份,品牌,销量(辆),同比增速(%)。品牌包括：比亚迪,特斯拉中国,理想,问界,小鹏,蔚来,零跑,哪吒,埃安。数据要合理真实。"
     }},
-    ...（共10个）
+    ...（共{file_count}个）
   ]
 }}
 """
@@ -183,8 +177,7 @@ PROMPT_MD = """
 目录结构（可用路径）：
 {dirs_json}
 
-请为该用户设计 **8个** 正在撰写的深度报告草稿和分析笔记文件（type=generated，format=md）。
-包含：行业深度报告草稿、投资策略报告、季度市场分析、专题研究报告等。
+请为该用户设计 {file_count}个 正在撰写的深度报告草稿和分析笔记文件（type=generated，format=md）。
 
 输出 JSON（只有files数组）：
 {{
@@ -193,11 +186,132 @@ PROMPT_MD = """
       "path": "D/工作文档/深度报告/2024/Q1/新能源乘用车2024Q1行业深度报告草稿.md",
       "type": "generated",
       "format": "md",
-      "description": "2024年Q1新能源乘用车行业深度报告（在研草稿，约3000字）",
+      "description": "2024年Q1新能源乘用车行业深度报告（在研草稿，约3000字），全面分析了第一季度市场表现、各品牌销量数据、竞争格局演变、新能源补贴政策影响，以及未来行业发展趋势和投资机会评估。",
       "content_prompt": "生成一篇2024年Q1新能源乘用车行业深度报告草稿，包含：市场概述、各品牌销量分析、竞争格局变化、政策影响、投资建议。约3000字，专业券商研究报告风格。"
     }},
-    ...（共8个）
+    ...（共{file_count}个）
   ]
+}}
+"""
+
+PROMPT_IMAGE = """
+用户画像：
+{profile_json}
+
+目录结构（可用路径）：
+{dirs_json}
+
+请为该用户设计 {file_count}个 可从公网下载的真实图片文件。
+sub_type 可以是 jpg, png, jpeg 等。
+
+输出 JSON（只有files数组）：
+{{
+  "files": [
+    {{
+      "path": "D/资源文件/产品图片/比亚迪/比亚迪汉EV官方产品图.jpg",
+      "type": "downloadable",
+      "sub_type": "jpg",
+      "description": "比亚迪汉EV新能源汽车官方产品图高清展示，包含车辆外观、内饰设计、配置参数、技术亮点等全方位视觉呈现，帮助用户了解比亚迪旗舰轿车的产品特色和市场定位。",
+      "search_query": "比亚迪汉EV 官方产品图 site:byd.com"
+    }},
+    ...（共{file_count}个）
+  ]
+}}
+"""
+
+PROMPT_VIDEO = """
+用户画像：
+{profile_json}
+
+目录结构（可用路径）：
+{dirs_json}
+
+请为该用户设计 {file_count}个 可从公网下载的真实视频文件。
+sub_type 可以是 mp4, mkv, avi 等。
+
+输出 JSON（只有files数组）：
+{{
+  "files": [
+    {{
+      "path": "D/资源文件/视频资源/行业会议/2024新能源汽车论坛主题演讲.mp4",
+      "type": "downloadable",
+      "sub_type": "mp4",
+      "description": "2024新能源汽车行业论坛中关于市场趋势的主题演讲视频，演讲嘉宾详细分析了新能源汽车市场发展现状、未来技术趋势、政策环境变化，以及产业链上下游的投资机会和挑战。",
+      "search_query": "2024新能源汽车论坛 市场趋势 演讲视频"
+    }},
+    ...（共{file_count}个）
+  ]
+}}
+"""
+
+PROMPT_AUDIO = """
+用户画像：
+{profile_json}
+
+目录结构（可用路径）：
+{dirs_json}
+
+请为该用户设计 {file_count}个 可从公网下载的真实音频文件。
+sub_type 可以是 mp3, wav, m4a 等。
+
+输出 JSON（只有files数组）：
+{{
+  "files": [
+    {{
+      "path": "D/资源文件/音频资源/播客/新能源行业周报第42期.mp3",
+      "type": "downloadable",
+      "sub_type": "mp3",
+      "description": "新能源汽车行业周报播客第42期：市场动态分析，主持人邀请行业专家深度解读近期新能源汽车销量数据、市场份额变化、新车型发布情况，以及政策利好对行业发展的推动作用。",
+      "search_query": "新能源汽车行业周报 播客 第42期"
+    }},
+    ...（共{file_count}个）
+  ]
+}}
+"""
+
+PROMPT_FILE_COUNTS = """
+根据以下用户画像，分析用户的职业特征、工作习惯和数据需求，为每个文件类别确定合适的文件数量（5-30个之间）。
+
+--- 用户画像 ---
+{profile_json}
+--- end ---
+
+请分析：
+• 用户的职位级别（初级/中级/高级/总监等）
+
+• 工作内容复杂度
+
+• 公司规模
+
+• 核心工具数量
+
+• 行业特点
+
+
+为以下9个文件类别确定文件数量：
+1. PDF文件(可下载) - 行业报告、财报、政策文件等
+2. HTML网页(可下载) - 新闻、公司页面、数据统计页等  
+3. Excel/CSV(可下载) - 公开数据文件
+4. 图片文件(可下载) - 产品图、市场图表等
+5. 视频文件(可下载) - 发布会、演讲视频等
+6. 音频文件(可下载) - 播客、会议录音等
+7. Word/文本(生成) - 笔记、报告、会议纪要等
+8. Excel/CSV(生成) - 数据分析表、模型等
+9. Markdown报告(生成) - 深度分析报告草稿
+
+输出 JSON：
+{{
+  "file_counts": {{
+    "PDF文件(可下载)": xx,
+    "HTML网页(可下载)": xx,
+    "Excel/CSV(可下载)": xx,
+    "图片文件(可下载)": xx,
+    "视频文件(可下载)": xx,
+    "音频文件(可下载)": xx,
+    "Word/文本(生成)": xx,
+    "Excel/CSV(生成)": xx,
+    "Markdown报告(生成)": xx
+  }}
 }}
 """
 
@@ -205,12 +319,18 @@ PROMPT_ENVCONFIG = """
 为以下用户生成详细的 Windows 10 电脑环境配置 JSON。
 
 用户信息：
-- 姓名：{name}
-- 职业：{role}
-- 单位：{company}
-- 系统用户名：{username}
-- 电脑名：{hostname}
-- 核心工具：{tools}
+• 姓名：{name}
+
+• 职业：{role}
+
+• 单位：{company}
+
+• 系统用户名：{username}
+
+• 电脑名：{hostname}
+
+• 核心工具：{tools}
+
 
 请生成如下 JSON 结构（所有字段完整填写，不得省略）：
 {{
@@ -271,6 +391,7 @@ PROMPT_ENVCONFIG = """
 """
 
 
+
 class ComputerSpecDesigner:
     def __init__(self, llm: LLMClient):
         self.llm = llm
@@ -289,28 +410,41 @@ class ComputerSpecDesigner:
         print(f"  -> {len(directories)} 个目录")
         dirs_json = json.dumps(directories, ensure_ascii=False)
 
-        # ── Step 2: files per category（并行调用，3个worker避免API限速）────────
+        # ── Step 2: file counts ─────────────────────────────────────────────
+        print("[Step 3] 确定各类文件数量...")
+        counts_spec = self.llm.generate_json(
+            PROMPT_FILE_COUNTS.format(profile_json=profile_json),
+            max_tokens=2000
+        )
+        file_counts = counts_spec.get("file_counts", {})
+        print(f"  -> 文件数量配置: {file_counts}")
+
+        # ── Step 3: files per category（并行调用，3个worker避免API限速）────────
         all_files: list[dict] = []
         results_lock = threading.Lock()
         cat_results: dict[str, list] = {}
 
         categories = [
-            ("PDF文件(可下载)",     PROMPT_PDF,       3000),
-            ("HTML网页(可下载)",    PROMPT_HTML,      2500),
-            ("Excel/CSV(可下载)",   PROMPT_EXCEL_CSV, 2000),
-            ("Word/文本(生成)",     PROMPT_DOCX,      3000),
-            ("Excel/CSV(生成)",     PROMPT_XLSX,      2500),
-            ("Markdown报告(生成)",  PROMPT_MD,        2500),
+            ("PDF文件(可下载)",     PROMPT_PDF,       3000, file_counts.get("PDF文件(可下载)", 15)),
+            ("HTML网页(可下载)",    PROMPT_HTML,      2500, file_counts.get("HTML网页(可下载)", 10)),
+            ("Excel/CSV(可下载)",   PROMPT_EXCEL_CSV, 2000, file_counts.get("Excel/CSV(可下载)", 6)),
+            ("图片文件(可下载)",     PROMPT_IMAGE,     2500, file_counts.get("图片文件(可下载)", 12)),
+            ("视频文件(可下载)",     PROMPT_VIDEO,     2500, file_counts.get("视频文件(可下载)", 6)),
+            ("音频文件(可下载)",     PROMPT_AUDIO,     2500, file_counts.get("音频文件(可下载)", 5)),
+            ("Word/文本(生成)",     PROMPT_DOCX,      3000, file_counts.get("Word/文本(生成)", 20)),
+            ("Excel/CSV(生成)",     PROMPT_XLSX,      2500, file_counts.get("Excel/CSV(生成)", 15)),
+            ("Markdown报告(生成)",  PROMPT_MD,        2500, file_counts.get("Markdown报告(生成)", 8)),
         ]
 
-        print(f"[Step 2] 并行设计 {len(categories)} 个文件类别...")
+        print(f"[Step 4] 并行设计 {len(categories)} 个文件类别...")
 
-        def design_category(cat_name, tmpl, max_tok):
+        def design_category(cat_name, tmpl, max_tok, file_count):
             try:
                 prompt = tmpl.format(
                     profile_json=profile_json,
                     dirs_json=dirs_json,
                     username=username,
+                    file_count=file_count,
                 )
                 result = self.llm.generate_json(prompt, max_tokens=max_tok)
                 files = result.get("files", [])
@@ -322,8 +456,8 @@ class ComputerSpecDesigner:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = {
-                executor.submit(design_category, cat_name, tmpl, max_tok): cat_name
-                for cat_name, tmpl, max_tok in categories
+                executor.submit(design_category, cat_name, tmpl, max_tok, file_count): cat_name
+                for cat_name, tmpl, max_tok, file_count in categories
             }
             # 按类别顺序合并（保证路径去重稳定）
             ordered_results = {}
@@ -333,17 +467,17 @@ class ComputerSpecDesigner:
 
         # 按原始顺序合并，去重
         seen_paths: set[str] = set()
-        for cat_name, _, _ in categories:
+        for cat_name, _, _, _ in categories:
             for f in ordered_results.get(cat_name, []):
                 path = f.get("path", "")
                 if path and path not in seen_paths:
                     seen_paths.add(path)
                     all_files.append(f)
 
-        print(f"[Step 2] 文件规划完成，共 {len(all_files)} 个文件，{len(directories)} 个目录")
+        print(f"[Step 4] 文件规划完成，共 {len(all_files)} 个文件，{len(directories)} 个目录")
 
-        # ── Step 3: env_config ───────────────────────────────────────────────
-        print("[Step 2] 设计电脑环境配置（env_config）...")
+        # ── Step 4: env_config ───────────────────────────────────────────────
+        print("[Step 5] 设计电脑环境配置（env_config）...")
         prompt_env = PROMPT_ENVCONFIG.format(
             name=profile.get("name", "用户"),
             role=profile.get("role", ""),

@@ -3,6 +3,12 @@
 Step 3 — File Processor  (parallel edition)
 创建 spec 中所有文件，使用 ThreadPoolExecutor 并行处理。
 
+多媒体文件策略（music, images, video）：
+  sub_type=mp3/wav/flac/aac  → 强制下载，失败则跳过（不降级）
+  sub_type=jpg/png/gif/svg    → 强制下载，失败则跳过（不降级）
+  sub_type=mp4/mkv/avi/mov   → 强制下载，失败则跳过（不降级）
+  特点：只使用下载策略，不降级到LLM生成或Jina抓取
+
 下载策略（downloadable）：
   sub_type=pdf   → search_for_pdf() → download_binary() → 真实 .pdf
   sub_type=html  → search() → download_html() → 真实 .html
@@ -21,6 +27,18 @@ Step 3 — File Processor  (parallel edition)
   max_workers  — 并行文件数（默认 8，I/O密集型用线程池）
   _llm_sem     — LLM 并发上限（默认 4），避免 API 限速
   _search_sem  — Serper 搜索并发上限（默认 5）
+
+多媒体文件特点：
+  • 强制使用下载策略
+
+  • 下载失败直接跳过，不降级处理
+
+  • 增加下载尝试次数（6次）
+
+  • 支持较大超时时间（视频120秒，音乐60秒）
+
+  • 文件大小验证（至少1KB）
+
 """
 import csv, io, json, os, time, re
 import threading
@@ -30,6 +48,26 @@ from utils.llm_client import LLMClient
 from utils.web_tools   import WebTools
 
 GEN_SYSTEM = "你是一名专业的内容生成助手，能够生成高度仿真的职场文件内容，语言专业、数据真实。"
+
+# 多媒体文件类型（强制下载，不降级到生成策略）
+MEDIA_EXTENSIONS = {
+    # 音乐
+    ".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a",
+    # 图片
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".tiff", ".tif",
+    # 视频
+    ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".3gp",
+    "audio", "image", "video"  # 通用媒体类型标识
+}
+
+MEDIA_TYPES = {
+    # 音乐
+    "mp3", "wav", "flac", "aac", "ogg", "wma", "m4a", "audio",
+    # 图片
+    "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "tiff", "tif", "image",
+    # 视频
+    "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v", "3gp", "video"
+}
 
 # 默认并发参数（可通过环境变量覆盖）
 DEFAULT_WORKERS    = int(os.getenv("MAX_WORKERS",    "8"))
@@ -83,6 +121,98 @@ class FileProcessor:
         with self._search_sem:
             return self.web.search_and_fetch(query, num=num)
 
+    def _is_media_file(self, sub_type: str, file_path: Path) -> bool:
+        """判断是否为多媒体文件（音乐、图片、视频）"""
+        sub_lower = sub_type.lower()
+        ext_lower = file_path.suffix.lower()
+
+        # 检查sub_type
+        if sub_lower in MEDIA_TYPES:
+            return True
+
+        # 检查文件扩展名
+        if ext_lower in MEDIA_EXTENSIONS:
+            return True
+
+        return False
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Media files handler (music, images, videos) - download only, no fallback
+    # ──────────────────────────────────────────────────────────────────────────
+    def _handle_media_download(self, fspec: dict, abs_path: Path) -> bool:
+        """处理多媒体文件下载（音乐、图片、视频）- 强制下载，失败则跳过"""
+        sub_type = fspec.get("sub_type", "").lower()
+        file_ext = abs_path.suffix.lower()
+
+        # 确定文件类型标识
+        media_type = sub_type if sub_type in MEDIA_TYPES else file_ext.lower().lstrip(".")
+
+        self._log(f"    [MEDIA] 检测到{media_type}多媒体文件，尝试下载...")
+
+        query = fspec.get("search_query", fspec.get("description", ""))
+
+        # 针对不同类型使用不同的搜索策略
+        if media_type in ("mp3", "wav", "flac", "aac", "ogg", "wma", "m4a", "audio"):
+            # 音乐文件搜索
+            search_query = f"{query} filetype:{media_type}" if media_type != "audio" else f"{query} music audio"
+        elif media_type in ("jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "tiff", "tif", "image"):
+            # 图片文件搜索
+            search_query = f"{query} filetype:{media_type}" if media_type != "image" else f"{query} image photo"
+        else:
+            # 视频文件搜索
+            search_query = f"{query} filetype:{media_type}" if media_type != "video" else f"{query} video"
+
+        # 执行搜索和下载尝试
+        download_attempts = 6  # 多媒体文件多尝试几次
+        for attempt in range(download_attempts):
+            try:
+                results = self._search(search_query, num=4)
+                if not results:
+                    continue
+
+                for r in results:
+                    url = r.get("link", "")
+                    if not url:
+                        continue
+
+                    self._log(f"    [MEDIA-{attempt+1}] 尝试下载: {url[:75]}...")
+
+                    # 增加超时时间，多媒体文件通常较大
+                    timeout = 120 if media_type in ("video", "mp4", "mkv", "avi") else 60
+                    ok = self.web.download_binary(url, str(abs_path), timeout=timeout)
+
+                    if ok and abs_path.exists():
+                        file_size = abs_path.stat().st_size
+
+                        # 检查文件大小是否合理
+                        min_size = 1000  # 至少1KB
+                        if file_size < min_size:
+                            self._log(f"    [SKIP] 文件过小 ({file_size} bytes)，可能下载失败")
+                            continue
+
+                        size_str = self._format_file_size(file_size)
+                        self._log(f"    [OK] {media_type.upper()} {size_str} -> {abs_path.name}")
+                        return True
+
+                    time.sleep(0.3)  # 下载失败后稍作等待
+
+            except Exception as e:
+                self._log(f"    [Error] 下载尝试失败: {e}")
+                continue
+
+        # 所有下载尝试都失败
+        self._log(f"    [FAIL] {media_type.upper()} 文件下载失败，已跳过（不降级到生成策略）")
+        return False
+
+    def _format_file_size(self, size_bytes: int) -> str:
+        """格式化文件大小显示"""
+        if size_bytes >= 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.2f} MB"
+        elif size_bytes >= 1024:
+            return f"{size_bytes / 1024:.2f} KB"
+        else:
+            return f"{size_bytes} bytes"
+
     # ──────────────────────────────────────────────────────────────────────────
     # Public entry
     # ──────────────────────────────────────────────────────────────────────────
@@ -112,8 +242,15 @@ class FileProcessor:
             abs_path.parent.mkdir(parents=True, exist_ok=True)
 
             self._log(f"  [{i:02d}/{total}] [{tag}] {path}")
+
+            # 检查是否为多媒体文件（音乐、图片、视频）
+            is_media = self._is_media_file(sub_type, abs_path)
+
             try:
-                if ftype == "downloadable":
+                if is_media:
+                    # 多媒体文件：强制使用下载策略，失败则跳过
+                    ok = self._handle_media_download(fspec, abs_path)
+                elif ftype == "downloadable":
                     ok = self._handle_downloadable(fspec, abs_path, profile)
                 else:
                     ok = self._handle_generated(fspec, abs_path, profile)
@@ -261,7 +398,7 @@ class FileProcessor:
                 path.write_text(html_content, encoding="utf-8")
             else:
                 path = path.with_suffix(".md")
-                header = f"# {desc}\n\n> **来源**: {src_url}\n\n"
+                header = f"# {desc}\n\n> 来源: {src_url}\n\n"
                 path.write_text(header + content, encoding="utf-8")
             kb = path.stat().st_size // 1024
             self._log(f"    [OK] Jina {kb} KB -> {path.name}")
@@ -396,7 +533,7 @@ class FileProcessor:
             f"用户背景：{profile.get('role')}，{profile.get('company')}"
         )
         content = self._llm_generate(prompt, temperature=0.7, max_tokens=2000)
-        header  = f"# {desc}\n\n> **注**: 由AI仿真生成（原始文件未能在线获取）\n\n"
+        header  = f"# {desc}\n\n> 注: 由AI仿真生成（原始文件未能在线获取）\n\n"
         path.write_text(header + content, encoding="utf-8")
         self._log(f"    [OK] LLM兜底 {len(content)} chars -> {path.name}")
         return True
