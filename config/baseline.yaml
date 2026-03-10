@@ -1,13 +1,13 @@
 api_config:
-  LLM_API_KEY: "sk-U2BkWhBzdLcJn01ovsXXESVO2nboXEjKqjj8WxECS6Dom5UZ"
-  LLM_BASE_URL: "https://api.gptplus5.com/v1"
+  LLM_API_KEY: "sk-xxx"
+  LLM_BASE_URL: "xxx"
   LLM_MODEL: "gpt-5.2"
   LLM_PROXY: null
   LLM_BACKEND: "openai"   # "openai" | "anthropic"
 
 web_tools_config:
-  SERPER_KEY: "c18083640ab538baeab47710fe7a93d7f987b754"
-  JINA_KEY: "jina_8c9997a799d3462c883b72ac03d53330B2HEHAGXvdyZDKuetE2i0PWOCJeV"
+  SERPER_KEY: "xxx"
+  JINA_KEY: "xxxx"
 
 pipeline_config:           # main.py 运行参数
   MAX_WORKERS: 8           # 并行下载/生成文件的线程数
