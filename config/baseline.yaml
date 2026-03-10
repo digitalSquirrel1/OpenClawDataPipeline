@@ -24,6 +24,7 @@ batch_generate_config: # 根据user_profile生成environment
   envs_dir: "Outputs/environments"  # 相对于 user_simulator_agent/ 的路径
   pattern: "*.json"
   skip_existing: true # 跳过已经生成的文件
+  max_concurrency: 3  # 并行生成环境的最大并发数
 
 profile_analyzer_config:
   PROMPT_TMPL: "prompts/profile_analyzer_prompt.md"

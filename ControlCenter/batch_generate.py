@@ -10,8 +10,13 @@
   python batch_generate.py --profiles-dir Outputs/profiles
 """
 
-import os, sys, json, argparse
+import os, sys, json, argparse, io, threading, contextvars
 from pathlib import Path
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# 每个并发 task 的日志前缀，主线程为空
+_task_tag: contextvars.ContextVar[str] = contextvars.ContextVar("_task_tag", default="")
 
 # 支持中文字符显示
 if sys.platform == "win32":
@@ -21,6 +26,63 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+
+# ─── Tee：同时输出到 terminal 和 log 文件 ────────────────────────────────────
+class _TeeWriter:
+    """将 write/flush 同时转发到多个流。"""
+
+    def __init__(self, *streams):
+        self._streams = streams
+        # 保留 encoding 属性以兼容 reconfigure 等检测
+        self.encoding = getattr(streams[0], "encoding", "utf-8")
+
+    def write(self, data):
+        if not data:
+            return 0
+        tag = _task_tag.get("")
+        if tag:
+            # 给每一行加上 tag 前缀（保留末尾换行）
+            lines = data.split("\n")
+            # 最后一个空元素说明 data 以 \n 结尾，不需要加 tag
+            tagged_parts = []
+            for i, line in enumerate(lines):
+                if i == len(lines) - 1 and line == "":
+                    tagged_parts.append("")
+                else:
+                    tagged_parts.append(f"{tag} {line}" if line else "")
+            data = "\n".join(tagged_parts)
+        for s in self._streams:
+            try:
+                s.write(data)
+                s.flush()
+            except Exception:
+                pass
+        return len(data) if isinstance(data, str) else 0
+
+    def flush(self):
+        for s in self._streams:
+            try:
+                s.flush()
+            except Exception:
+                pass
+
+    # 让 reconfigure 等调用不报错
+    def __getattr__(self, name):
+        return getattr(self._streams[0], name)
+
+
+def _setup_tee_logging(log_dir: Path) -> Path:
+    """创建日志文件并将 stdout/stderr 同时 tee 到该文件。"""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%H%M%S")
+    log_path = log_dir / f"{timestamp}.log"
+    log_file = open(log_path, "w", encoding="utf-8")
+
+    sys.stdout = _TeeWriter(sys.__stdout__, log_file)
+    sys.stderr = _TeeWriter(sys.__stderr__, log_file)
+    return log_path
+
+
 # ─── 项目路径设置 ───────────────────────────────────────────────────────────────
 _CONTROL_CENTER = Path(__file__).resolve().parent
 _PROJECT_ROOT   = _CONTROL_CENTER.parent              # user_simulator_agent/
@@ -29,6 +91,7 @@ _WORKING_SPACE  = _PROJECT_ROOT / "WorkingSpace"
 # 默认路径配置
 DEFAULT_PROFILES_DIR = _PROJECT_ROOT / "Outputs" / "profiles"
 DEFAULT_ENVS_DIR     = _PROJECT_ROOT / "Outputs" / "environments"
+DEFAULT_LOG_DIR      = _PROJECT_ROOT / "Log"
 
 # ─── 加载配置 & 导入 pipeline ─────────────────────────────────────────────────
 # 把 project root 和 WorkingSpace 都加到 sys.path
@@ -59,6 +122,7 @@ def parse_args():
     envs_dir_default      = _resolve(_batch_cfg.get("envs_dir"),     DEFAULT_ENVS_DIR)
     pattern_default       = _batch_cfg.get("pattern")      or "*.json"
     skip_existing_default = bool(_batch_cfg.get("skip_existing", False))
+    max_concurrency_default = int(_batch_cfg.get("max_concurrency", 3))
 
     parser = argparse.ArgumentParser(
         description="批量根据用户画像生成环境"
@@ -86,6 +150,12 @@ def parse_args():
         action="store_true",
         default=skip_existing_default,
         help="跳过已生成的环境"
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=max_concurrency_default,
+        help=f"最大并发数（默认: {max_concurrency_default}）"
     )
     return parser.parse_args()
 
@@ -145,20 +215,27 @@ def generate_env_for_profile(
         print(f"  [OK] {env_name} 生成成功")
         return True
     except Exception as e:
+        import traceback
         print(f"  [FAIL] {env_name} 生成失败: {e}")
+        traceback.print_exc()
         return False
 
 
 def main():
     """主函数"""
+    # ── 设置 tee 日志 ──────────────────────────────────────────────────
+    log_path = _setup_tee_logging(DEFAULT_LOG_DIR)
+
     print("\n" + "=" * 60)
     print("  批量环境生成器")
     print("=" * 60)
+    print(f"  日志文件: {log_path}")
 
     # 解析参数
     args = parse_args()
     profiles_dir = Path(args.profiles_dir)
     envs_dir = Path(args.envs_dir)
+    max_concurrency = args.max_concurrency
 
     # 检查路径
     if not profiles_dir.exists():
@@ -171,6 +248,7 @@ def main():
     print(f"\n  用户画像目录: {profiles_dir}")
     print(f"  环境输出目录: {envs_dir}")
     print(f"  匹配模式: {args.pattern}")
+    print(f"  最大并发数: {max_concurrency}")
 
     # 查找所有用户画像文件
     profile_files = sorted(profiles_dir.glob(args.pattern))
@@ -181,23 +259,40 @@ def main():
 
     print(f"\n  找到 {len(profile_files)} 个用户画像文件")
 
-    # 批量处理
+    # ── 并行处理 ──────────────────────────────────────────────────────
     print("\n[开始生成]")
     results = {"success": 0, "fail": 0, "skip": 0}
+    lock = threading.Lock()
 
-    for profile_file in profile_files:
+    def _task(profile_file: Path) -> tuple[Path, bool]:
+        tag = f"[{profile_file.stem}]"
+        _task_tag.set(tag)
         success = generate_env_for_profile(
             profile_file,
             envs_dir,
             skip_existing=args.skip_existing,
         )
+        return profile_file, success
 
-        if success:
-            results["success"] += 1
-        else:
-            results["fail"] += 1
+    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        futures = {
+            executor.submit(_task, pf): pf for pf in profile_files
+        }
+        for future in as_completed(futures):
+            pf = futures[future]
+            try:
+                _, success = future.result()
+            except Exception as e:
+                import traceback
+                print(f"  [FAIL] {pf.name} 未捕获异常: {e}")
+                traceback.print_exc()
+                success = False
 
-        print()
+            with lock:
+                if success:
+                    results["success"] += 1
+                else:
+                    results["fail"] += 1
 
     # 汇总
     print("=" * 60)
@@ -207,6 +302,7 @@ def main():
     print(f"  成功: {results['success']}")
     print(f"  失败: {results['fail']}")
     print(f"  跳过: {results['skip']}")
+    print(f"\n  日志文件: {log_path}")
     print()
 
     return 0 if results["fail"] == 0 else 1

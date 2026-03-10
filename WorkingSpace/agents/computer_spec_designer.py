@@ -110,7 +110,7 @@ class ComputerSpecDesigner:
                 print(f"  -> [{cat_name}] +{len(files)} 个文件")
                 return cat_name, files
             except Exception as e:
-                print(f"  [!] {cat_name} 设计失败: {e}")
+                print(f"  [!] {cat_name} 设计失败: {repr(e)}")
                 return cat_name, []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:

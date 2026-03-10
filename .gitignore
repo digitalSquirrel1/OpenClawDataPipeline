@@ -3,3 +3,5 @@ ControlCenter/__pycache__/batch_generate.cpython-314.pyc
 ControlCenter/__pycache__/generate_user_profile.cpython-314.pyc
 # data
 Outputs/*
+# logs
+Log/*
