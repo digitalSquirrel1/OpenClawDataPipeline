@@ -1,0 +1,36 @@
+api_config:
+  LLM_API_KEY: "sk-U2BkWhBzdLcJn01ovsXXESVO2nboXEjKqjj8WxECS6Dom5UZ"
+  LLM_BASE_URL: "https://api.gptplus5.com/v1"
+  LLM_MODEL: "gpt-5.2"
+  LLM_PROXY: null
+
+generate_user_profile_config:
+  PROFILE_GENERATION_PROMPT: "prompts/profile_generation_prompt.md"
+  output_dir: null   # null → defaults to Outputs/profiles/
+  count: 3
+
+batch_generate_config:
+  profiles_dir: null   # null → defaults to Outputs/profiles/
+  envs_dir: null       # null → defaults to Outputs/environments/
+  pattern: "*.json"
+  skip_existing: false
+
+profile_analyzer_config:
+  PROMPT_TMPL: "prompts/profile_analyzer_prompt.md"
+
+computer_spec_designer_config:
+  PROMPT_DIRS: "prompts/computer_spec_dirs.md"
+  PROMPT_PDF: "prompts/computer_spec_pdf.md"
+  PROMPT_HTML: "prompts/computer_spec_html.md"
+  PROMPT_EXCEL_CSV: "prompts/computer_spec_excel_csv.md"
+  PROMPT_DOCX: "prompts/computer_spec_docx.md"
+  PROMPT_XLSX: "prompts/computer_spec_xlsx.md"
+  PROMPT_MD: "prompts/computer_spec_md.md"
+  PROMPT_IMAGE: "prompts/computer_spec_image.md"
+  PROMPT_VIDEO: "prompts/computer_spec_video.md"
+  PROMPT_AUDIO: "prompts/computer_spec_audio.md"
+  PROMPT_FILE_COUNTS: "prompts/computer_spec_file_counts.md"
+  PROMPT_ENVCONFIG: "prompts/computer_spec_envconfig.md"
+
+user_agent_builder_config:
+  PROMPT_TMPL: "prompts/user_agent_builder_prompt.md"

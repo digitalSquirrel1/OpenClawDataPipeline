@@ -28,37 +28,49 @@ _WORKING_SPACE = _PROJECT_ROOT / "WorkingSpace"
 _MAIN_SCRIPT = _WORKING_SPACE / "main.py"
 
 # 默认路径配置
-# profiles 和 environments 都放在项目根目录的 Outputs 下
 DEFAULT_PROFILES_DIR = _PROJECT_ROOT / "Outputs" / "profiles"
 DEFAULT_ENVS_DIR = _PROJECT_ROOT / "Outputs" / "environments"
 
+# ─── 加载配置 ──────────────────────────────────────────────────────────────────
+sys.path.insert(0, str(_PROJECT_ROOT))
+from config.config_loader import load_config
+
+_cfg = load_config()
+_batch_cfg = _cfg.get("batch_generate_config", {})
+
 
 def parse_args():
-    """解析命令行参数"""
+    """解析命令行参数（默认值从 config/baseline.yaml 读取）"""
+    profiles_dir_default = _batch_cfg.get("profiles_dir") or str(DEFAULT_PROFILES_DIR)
+    envs_dir_default     = _batch_cfg.get("envs_dir")     or str(DEFAULT_ENVS_DIR)
+    pattern_default      = _batch_cfg.get("pattern")      or "*.json"
+    skip_existing_default = bool(_batch_cfg.get("skip_existing", False))
+
     parser = argparse.ArgumentParser(
         description="批量根据用户画像生成环境"
     )
     parser.add_argument(
         "--profiles-dir",
         type=str,
-        default=str(DEFAULT_PROFILES_DIR),
-        help=f"用户画像目录（默认: {DEFAULT_PROFILES_DIR}）"
+        default=profiles_dir_default,
+        help=f"用户画像目录（默认: {profiles_dir_default}）"
     )
     parser.add_argument(
         "--envs-dir",
         type=str,
-        default=str(DEFAULT_ENVS_DIR),
-        help=f"环境输出目录（默认: {DEFAULT_ENVS_DIR}）"
+        default=envs_dir_default,
+        help=f"环境输出目录（默认: {envs_dir_default}）"
     )
     parser.add_argument(
         "--pattern",
         type=str,
-        default="*.json",
-        help="匹配文件名模式（默认: *.json）"
+        default=pattern_default,
+        help=f"匹配文件名模式（默认: {pattern_default}）"
     )
     parser.add_argument(
         "--skip-existing",
         action="store_true",
+        default=skip_existing_default,
         help="跳过已生成的环境"
     )
     return parser.parse_args()
@@ -119,8 +131,6 @@ def generate_env_for_profile(
     print(f"    输出: {env_path}")
 
     # 构建 main.py 的调用命令
-    # --user-profile 参数：如果相对于 WorkingSpace 则用相对路径，否则用绝对路径
-    # --output 参数：相对于 WorkingSpace 的路径，例如 "../Outputs/environments/用户名_职业"
     output_full_path = output_dir / env_name
 
     # 转换为相对于 WorkingSpace 目录的路径

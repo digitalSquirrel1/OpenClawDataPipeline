@@ -2,7 +2,13 @@
 """
 LLM client wrapper — OpenAI-compatible / Anthropic SDK dual backend.
 """
-import json, time, re, os
+import json, time, re, os, sys
+from pathlib import Path
+
+# 加载共享 retry 调用函数
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # user_simulator_agent/
+sys.path.insert(0, str(_PROJECT_ROOT))
+from shared.llm_caller import chat_with_retry
 
 
 class LLMClient:
@@ -15,35 +21,22 @@ class LLMClient:
             self._ant = anthropic.Anthropic(
                 api_key=api_key or os.getenv("ANTHROPIC_API_KEY", "")
             )
-            self._client = None
         else:
-            from openai import OpenAI
-            self._client = OpenAI(api_key=api_key, base_url=base_url)
             self._ant = None
 
     # ── low-level ─────────────────────────────────────────────────────────────
     def chat(self, messages: list, temperature: float = 0.7,
              json_mode: bool = False, max_tokens: int = 4096) -> str:
-        for attempt in range(3):
-            try:
-                if self.backend == "anthropic":
-                    return self._ant_chat(messages, temperature, max_tokens)
-                else:
-                    return self._oai_chat(messages, temperature, json_mode, max_tokens)
-            except Exception as exc:
-                if attempt < 2:
-                    print(f"  [LLM retry {attempt+1}] {exc}")
-                    time.sleep(3)
-                else:
-                    raise
+        if self.backend == "anthropic":
+            return self._ant_chat(messages, temperature, max_tokens)
+        else:
+            return self._oai_chat(messages, temperature, json_mode, max_tokens)
 
     def _oai_chat(self, messages, temperature, json_mode, max_tokens):
-        kwargs: dict = dict(model=self.model, messages=messages,
-                            temperature=temperature, max_tokens=max_tokens)
+        kwargs: dict = dict(temperature=temperature, max_tokens=max_tokens)
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        resp = self._client.chat.completions.create(**kwargs)
-        return resp.choices[0].message.content
+        return chat_with_retry(messages, model=self.model, **kwargs)
 
     def _ant_chat(self, messages, temperature, max_tokens):
         sys_msg   = next((m["content"] for m in messages if m["role"] == "system"), "")
@@ -52,8 +45,19 @@ class LLMClient:
                          messages=user_msgs, temperature=temperature)
         if sys_msg:
             kwargs["system"] = sys_msg
-        resp = self._ant.messages.create(**kwargs)
-        return resp.content[0].text
+        last_exc: Exception = None
+        for attempt in range(1, 6):
+            try:
+                resp = self._ant.messages.create(**kwargs)
+                return resp.content[0].text
+            except Exception as exc:
+                last_exc = exc
+                if attempt < 5:
+                    print(f"  [Anthropic retry {attempt}/5] {type(exc).__name__}: {exc}")
+                    time.sleep(3)
+                else:
+                    print("  [Anthropic] 已重试 5 次，全部失败")
+        raise last_exc
 
     # ── convenience ───────────────────────────────────────────────────────────
     def generate(self, prompt: str,

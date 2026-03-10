@@ -3,41 +3,22 @@
 Step 1 — Profile Analyzer
 Parses free-text user_profile.txt into a structured JSON dict.
 """
+import sys
+from pathlib import Path
 from utils.llm_client import LLMClient
 
+# ─── 加载配置 ──────────────────────────────────────────────────────────────────
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # user_simulator_agent/
+sys.path.insert(0, str(_PROJECT_ROOT))
+from config.config_loader import load_config, get_prompt
+
+_cfg = load_config()
+_analyzer_cfg = _cfg.get("profile_analyzer_config", {})
+
+_prompt_path = _analyzer_cfg.get("PROMPT_TMPL")
+PROMPT_TMPL = get_prompt(_prompt_path) if _prompt_path else ""
 
 SYSTEM = "你是一名精通用户研究的专家，擅长将自然语言用户画像转化为结构化数据。只输出合法JSON。"
-
-PROMPT_TMPL = """
-请将以下用户画像文本解析为结构化JSON。字段说明见后。
-
----用户画像---
-{profile_text}
----end---
-
-要求输出如下JSON结构（所有字段均需填写，不得省略）：
-{{
-  "name": "根据角色特征生成一个真实感强的中文姓名（如：陈志远）",
-  "gender": "男/女",
-  "age": 推测年龄整数,
-  "role": "职业角色（精确描述）",
-  "industry": "所在行业",
-  "company": "推测的单位名称（不必是真实公司，要有说服力）",
-  "department": "所在部门",
-  "os": "操作系统全称",
-  "username": "Windows用户名（英文/拼音，如：chenzhiyuan）",
-  "hostname": "电脑名（如：CHEN-RESEARCH）",
-  "drive_layout": ["C", "D"],
-  "core_tools": ["软件列表"],
-  "file_types": ["经常处理的文件类型，如：PDF、XLSX、PPTX、CSV"],
-  "work_focus": ["主要工作内容，每条简洁"],
-  "file_organization_style": "文件组织习惯的描述",
-  "personality": ["性格特征，影响任务描述风格"],
-  "domain_keywords": ["领域关键词，用于搜索相关文件"],
-  "task_description": "这个用户当前最典型的一项具体工作任务（要具体，包含文件名/路径引用，200字以内）",
-  "task_context": "任务背景（领导/同事/截止日期等场景信息，100字以内）"
-}}
-"""
 
 
 class ProfileAnalyzer:
