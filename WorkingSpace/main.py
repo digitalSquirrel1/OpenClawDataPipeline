@@ -121,7 +121,7 @@ def run_pipeline(
     from agents.profile_analyzer     import ProfileAnalyzer
     from agents.computer_spec_designer import ComputerSpecDesigner
     from agents.file_processor       import FileProcessor
-    from agents.user_agent_builder   import UserAgentBuilder
+    from agents.user_query_generate  import UserQueryGenerator
 
     # ── 读取配置 ──────────────────────────────────────────────────────────
     cfg      = load_config()
@@ -187,12 +187,17 @@ def run_pipeline(
     readme = _build_readme(profile, spec, created)
     (profile_dir / "README.md").write_text(readme, encoding="utf-8")
 
-    # ── Step 4：生成 user_agent.py ───────────────────────────────────────────
-    _banner("Step 4 / 4  生成 user_agent.py")
-    builder    = UserAgentBuilder(llm, llm_api_key, llm_base_url, llm_model)
-    agent_code = builder.build(profile, spec)
-    agent_path = out_dir / "user_agent.py"
-    builder.save(agent_code, str(agent_path))
+    # ── Step 4：生成 user_queries.json ──────────────────────────────────────
+    _banner("Step 4 / 4  生成 user_queries.json")
+    generator      = UserQueryGenerator(llm)
+    queries_result = generator.generate(profile, spec)
+    if queries_result.get("error"):
+        raise RuntimeError(f"UserQueryGenerator 失败: {queries_result['error']}")
+    queries_path = out_dir / "user_queries.json"
+    queries_path.write_text(
+        json.dumps(queries_result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"  → user_queries.json 已写入 ({len(queries_result.get('queries', []))} 条 query)")
 
     # ── 打包 zip ─────────────────────────────────────────────────────────────
     zip_path = out_dir / f"{profile_dir_name}.zip"
@@ -204,8 +209,8 @@ def run_pipeline(
     print(f"\n  模拟角色    : {profile.get('name')}（{profile.get('role')}）")
     print(f"  创建文件数  : {len(created)}")
     print(f"  耗时        : {elapsed:.1f} 秒\n")
-    print(f"  📁 {profile_dir_name}.zip : {zip_path}")
-    print(f"  🤖 user_agent.py        : {agent_path}")
+    print(f"  📁 {profile_dir_name}.zip    : {zip_path}")
+    print(f"  📋 user_queries.json : {queries_path}")
     print()
 
     return {

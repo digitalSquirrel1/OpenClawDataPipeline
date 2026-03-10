@@ -1,6 +1,6 @@
 # OpenClawDataPipeline — User Simulator Agent
 
-基于 LLM 的 Windows 模拟环境生成管线。给定用户画像描述文本，自动生成完整的 Windows 文件系统（目录 + 真实文档）、`env_config.json` 环境配置，以及可独立运行的 `user_agent.py` 用户模拟脚本。
+基于 LLM 的 Windows 模拟环境生成管线。给定用户画像描述文本，自动生成完整的 Windows 文件系统（目录 + 真实文档）、`env_config.json` 环境配置，以及 `user_queries.json` 用户查询集。
 
 ---
 
@@ -115,8 +115,8 @@ user_profile.txt / profile.json
                │ created files list
                ▼
 ┌─────────────────────────────┐
-│  Step 4: UserAgentBuilder   │
-│  生成 user_agent.py 模拟脚本 │
+│  Step 4: UserQueryGenerator  │
+│  生成 user_queries.json 查询集│
 └─────────────────────────────┘
                │
                ▼
@@ -127,7 +127,7 @@ user_profile.txt / profile.json
         │   ├── C/ D/ ...
         │   └── (所有生成的文件)
         ├── computer_profile.zip
-        └── user_agent.py
+        └── user_queries.json
 ```
 
 #### Step 1: ProfileAnalyzer
@@ -220,22 +220,27 @@ user_profile.txt / profile.json
 - Content-Type 白名单校验
 - 视频超时 120s，音频 60s，其他 30-60s
 
-#### Step 4: UserAgentBuilder
+#### Step 4: UserQueryGenerator
 
 | | 说明 |
 |---|---|
-| **输入** | Step 1 的 `profile` + Step 2 的 `spec`（前 20 个文件摘要） |
-| **处理** | LLM 生成完整 Python 脚本 |
-| **输出** | `user_agent.py` 源代码，保存到输出目录 |
+| **输入** | Step 1 的 `profile` + Step 2 的 `spec`（文件类型分布 + 文件路径示例） |
+| **处理** | LLM 生成 5 条与用户画像和文件环境相关的自然语言查询 |
+| **输出** | `user_queries.json`，保存到输出目录 |
 
-生成的 `user_agent.py` 包含：
+生成的 `user_queries.json` 包含：
 
-- **`SYSTEM_PROMPT`**：嵌入用户身份、环境描述、任务上下文
-- **`UserAgent` 类**：
-  - `get_initial_message()` → 用户发出的第一条消息
-  - `respond(assistant_msg, history)` → 基于助手回复生成用户下一条消息
-  - `is_done(history)` → 判断任务是否完成
-- **`__main__` 入口**：命令行多轮对话循环
+```json
+{
+  "queries": ["查询1", "查询2", "..."],
+  "profile": { ... },
+  "spec_summary": {
+    "directories_count": 42,
+    "files_count": 65,
+    "file_types": {"pdf": 10, "xlsx": 8, ...}
+  }
+}
+```
 
 #### 管线最终输出
 
@@ -247,7 +252,7 @@ output/
 │   ├── C/Users/{username}/    # C 盘用户目录
 │   └── D/...                  # D 盘工作目录
 ├── computer_profile.zip       # 整个环境的 ZIP 打包
-└── user_agent.py              # 用户模拟脚本（可独立运行）
+└── user_queries.json          # 用户查询集（JSON）
 ```
 
 管线返回值：
@@ -270,10 +275,15 @@ Outputs/profiles/*.json          # 输入：用户画像 JSON 文件
         │
         ▼
 ┌───────────────────────────┐
-│  1. 扫描 profiles 目录     │    glob 匹配 pattern（默认 *.json）
-│  2. 遍历每个画像文件       │
+│  1. 初始化 Tee 日志        │    stdout/stderr 同时输出到终端和 Log/{HHMMSS}.log
 └──────────┬────────────────┘
-           │ 逐个处理（非并行）
+           │
+           ▼
+┌───────────────────────────┐
+│  2. 扫描 profiles 目录     │    glob 匹配 pattern（默认 *.json）
+└──────────┬────────────────┘
+           │ ThreadPoolExecutor 并行（max_concurrency，默认 3）
+           │ 每个 task 日志自动加 [profile名] 前缀
            ▼
 ┌───────────────────────────┐
 │  3. 提取画像信息           │    读取 JSON → 提取 姓名 + 职业
@@ -331,7 +341,7 @@ Outputs/environments/
 │   │   ├── README.md
 │   │   ├── C/ D/ ...
 │   ├── 林辰_AI工程师.zip
-│   └── user_agent.py
+│   └── user_queries.json
 ├── 王芳_产品经理/
 │   └── ...
 └── ...
