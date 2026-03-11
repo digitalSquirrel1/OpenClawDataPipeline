@@ -9,120 +9,22 @@ Step 4 — User Query Generator
   • 学习相关：知识问询、技能学习、数据分析、行业研究等
 
 """
+import sys
 import json
+from pathlib import Path
+
+# 确保 config 可以被 import（WorkingSpace/ 和 user_simulator_agent/ 都加入路径）
+_WS = Path(__file__).resolve().parent.parent
+_ROOT = _WS.parent
+for _p in (str(_WS), str(_ROOT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from config.config_loader import load_config, get_prompt
 from utils.llm_client import LLMClient
 
-PROMPT_USER_QUERIES = """
-根据以下用户画像和用户电脑中的文件/目录结构，生成5个用户日常可能会询问的使用计算机工具解决的自然语言queries。
-
---- 用户画像 ---
-{profile_json}
---- end ---
-
---- 用户电脑文件结构摘要 ---
-目录数量：{dir_count}个
-文件类型分布：
-{file_types_summary}
-文件样例：
-{file_samples}
---- end ---
-
-请生成5个自然、真实的用户query，反映该用户在学习、生活中可能提出的问题，不要涉及工作相关的内容。
-
-已知计算机常用的操作包括但不限于：
-
-• 文件管理：查找、整理、重命名、删除、批量处理等
-
-• 数据处理：数据清洗、分析、可视化、模型训练等
-
-• 文档编辑：撰写、修改、格式调整、内容生成等
-
-• 网络/本地信息操作：
-
-  • 网络搜索、数据库操作
-
-  • 调研与推荐
-
-• 通信与日程：
-
-  • 邮件操作
-
-  • 定时任务（闹钟、提醒、任务管理）
-
-• 内容整合：
-
-  • 图表生成
-
-  • 摘要撰写
-
-  • 数据清洗
-
-  • 合规校验
-
-• 形式化展示：
-
-  • 网页、PPT、海报制作
-
-  • 文档格式转换
-
-• 浏览器操作：
-
-  • 社区互动
-
-  • 资料爬取与上传
-
-  • 网站项目管理
-
-• 题目解答
-
-• 各类工作流
-
-• 系统操作管理
-
-• 常用应用/软件操作
-
-• 生活技能：
-
-  • 出行订改、购物选品
-
-  • 地图查询、计算
-
-  • 健康管理、理财
-
-• 多模态交互与处理：
-
-  • 语音、图像、视频、文字的编辑、转换、识别、截取、生成、分析
-
-  • 娱乐创作场景：视频剪辑、文学创作、歌曲生成等
-
-
-生成的query可以是上述独立的功能或这些功能的组合，完全具体、可直接执行、无模糊信息、无任何歧义、符合电脑真实操作场景的Query。
-严禁宽泛性query，如“对xxx图片进行剪裁”，不知道要剪裁成什么样导致无法执行，query种类尽量多样，不要全部是同一领域。
-
-query类型可包括：
-1. 个人生活助手
-（聚焦个人非工作、非学习的日常场景，覆盖生活琐事、居家、健康、出行、财务、娱乐等，提升生活舒适度与趣味性）
-    娱乐兴趣与资讯推荐
-    出行与订购
-    日常事务与日程提醒
-    其他（健康与习惯养成，个人理财，家居控制等）
-2. 学习与知识管理（面向个人学习成长、个性化教育、知识沉淀、学术研究等场景，实现学习资料和课程内容的自动获取与管理）
-    知识搜索与研究
-    学习与研究资料管理
-    学习计划与课程管理
-    其他（习题练习与错题复盘等）
-
-输出JSON格式（只有queries数组，无其他内容）：
-{{
-  "queries": [
-    "查询1：对photo/2025_travel下的IMG_001.jpg、IMG_002.jpg、IMG_003.jpg进行批量裁剪、滤镜处理，去除路人和车辆，图片要改为暗色调。",
-    "查询2：...",
-    "查询3：...",
-    "查询4：...",
-    "查询5：..."
-  ]
-}}
-"""
+_cfg = load_config().get("user_query_generator_config", {})
+_PROMPT_TMPL_PATH = _cfg.get("PROMPT_TMPL", "prompts/user_query_generate_prompt.md")
 
 
 class UserQueryGenerator:
@@ -175,7 +77,7 @@ class UserQueryGenerator:
         file_types_summary = self._build_file_types_summary(spec)
         file_samples = self._build_file_samples(spec)
         
-        prompt = PROMPT_USER_QUERIES.format(
+        prompt = get_prompt(_PROMPT_TMPL_PATH).format(
             profile_json=profile_json,
             dir_count=len(directories),
             file_types_summary=file_types_summary,

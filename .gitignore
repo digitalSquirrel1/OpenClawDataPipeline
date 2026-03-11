@@ -7,3 +7,4 @@ WorkingSpace/output/*
 # logs
 Log/*
 WorkingSpace/output/
+__pycache__/

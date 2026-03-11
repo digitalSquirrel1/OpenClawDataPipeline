@@ -73,10 +73,12 @@ class LLMClient:
 
     def generate_json(self, prompt: str,
                       system: str = "你是一个专业的AI助手，只输出合法JSON。",
-                      max_tokens: int = 4096) -> dict:
-        """Generate and parse JSON, with fallback extraction."""
-        raw = self.generate(prompt, system=system, json_mode=True,
-                            max_tokens=max_tokens)
+                      ) -> dict:
+        """Generate and parse JSON, with fallback extraction.
+        删除max_token=4096防止解码为空"""
+        raw = self.generate(prompt, system=system, 
+                            json_mode=True,
+                            )
         try:
             return json.loads(raw)
         except json.JSONDecodeError:

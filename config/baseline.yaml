@@ -45,3 +45,6 @@ computer_spec_designer_config:
 
 user_agent_builder_config:
   PROMPT_TMPL: "prompts/user_agent_builder_prompt.md"
+
+user_query_generator_config:
+  PROMPT_TMPL: "prompts/user_query_generate_prompt.md"

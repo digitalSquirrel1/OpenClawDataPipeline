@@ -60,20 +60,20 @@ class ComputerSpecDesigner:
         username = profile.get("username", "user")
 
         # ── Step 1: directories ──────────────────────────────────────────────
-        print("[Step 2] 设计目录结构...")
+        print("[Step 1] 设计目录结构...")
         dirs_spec = self.llm.generate_json(
             PROMPT_DIRS.format(profile_json=profile_json, username=username),
-            max_tokens=3000
+            # max_tokens=3000
         )
         directories = dirs_spec.get("directories", [])
         print(f"  -> {len(directories)} 个目录")
         dirs_json = json.dumps(directories, ensure_ascii=False)
 
         # ── Step 2: file counts ─────────────────────────────────────────────
-        print("[Step 3] 确定各类文件数量...")
+        print("[Step 2] 确定各类文件数量...")
         counts_spec = self.llm.generate_json(
             PROMPT_FILE_COUNTS.format(profile_json=profile_json),
-            max_tokens=2000
+            # max_tokens=2000
         )
         file_counts = counts_spec.get("file_counts", {})
         print(f"  -> 文件数量配置: {file_counts}")
@@ -95,7 +95,7 @@ class ComputerSpecDesigner:
             ("Markdown报告(生成)",  PROMPT_MD,        2500, file_counts.get("Markdown报告(生成)", 8)),
         ]
 
-        print(f"[Step 4] 并行设计 {len(categories)} 个文件类别...")
+        print(f"[Step 3] 并行设计 {len(categories)} 个文件类别...")
 
         def design_category(cat_name, tmpl, max_tok, file_count):
             try:
@@ -105,7 +105,10 @@ class ComputerSpecDesigner:
                     username=username,
                     file_count=file_count,
                 )
-                result = self.llm.generate_json(prompt, max_tokens=max_tok)
+                result = self.llm.generate_json(
+                    prompt, 
+                    # max_tokens=max_tok
+                )
                 files = result.get("files", [])
                 print(f"  -> [{cat_name}] +{len(files)} 个文件")
                 return cat_name, files
@@ -146,7 +149,10 @@ class ComputerSpecDesigner:
             tools=", ".join(profile.get("core_tools", [])),
         )
         try:
-            env_config = self.llm.generate_json(prompt_env, max_tokens=4096)
+            env_config = self.llm.generate_json(
+                prompt_env, 
+                # max_tokens=4096
+            )
         except Exception as e:
             print(f"  [!] env_config 生成失败: {e}")
             env_config = {}
