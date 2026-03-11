@@ -4,6 +4,7 @@ __pycache__/
 # data
 Outputs/*
 WorkingSpace/output/*
+tests/dl_output/*
 # logs
 Log/*
 WorkingSpace/output/

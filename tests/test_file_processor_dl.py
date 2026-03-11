@@ -83,63 +83,67 @@ def run_test(name: str, fn, url_count: int):
 
 
 # ── 主测试逻辑 ────────────────────────────────────────────────────────────────
-with tempfile.TemporaryDirectory() as tmpdir:
-    fp = FileProcessor(llm=None, web=web, output_dir=tmpdir)
+_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+tmpdir = Path(__file__).parent / "dl_output" / _ts
+tmpdir.mkdir(parents=True)
+tmpdir = str(tmpdir)
 
-    # 禁用所有 fallback / 生成方法，防止 LLM=None 崩溃
-    fp._jina_fallback = lambda *a, **kw: False
-    fp._llm_fallback  = lambda *a, **kw: False
-    fp._gen_xlsx      = lambda *a, **kw: False
-    fp._gen_csv       = lambda *a, **kw: False
-    fp._gen_text      = lambda *a, **kw: False
+fp = FileProcessor(llm=None, web=web, output_dir=tmpdir)
 
-    fspec   = {"description": "test file", "search_query": "test"}
-    profile = {"role": "tester", "company": "test-corp"}
+# 禁用所有 fallback / 生成方法，防止 LLM=None 崩溃
+fp._jina_fallback = lambda *_, **__: False
+fp._llm_fallback  = lambda *_, **__: False
+fp._gen_xlsx      = lambda *_, **__: False
+fp._gen_csv       = lambda *_, **__: False
+fp._gen_text      = lambda *_, **__: False
 
-    # ── _dl_pdf ───────────────────────────────────────────────────────────────
-    fp._search_for_pdf = lambda *a, **kw: PDF_URLS
+fspec   = {"description": "test file", "search_query": "test"}
+profile = {"role": "tester", "company": "test-corp"}
 
-    def _test_pdf():
-        p = Path(tmpdir) / "dl_test.pdf"
-        return fp._dl_pdf(fspec, p, profile)
+# ── _dl_pdf ───────────────────────────────────────────────────────────────
+fp._search_for_pdf = lambda *_, **__: PDF_URLS
 
-    run_test("_dl_pdf", _test_pdf, len(PDF_URLS))
+def _test_pdf():
+    p = Path(tmpdir) / "dl_test.pdf"
+    return fp._dl_pdf(fspec, p, profile)
 
-    # ── _dl_excel ─────────────────────────────────────────────────────────────
-    fp._search_for_filetype = lambda *a, **kw: XLSX_URLS
+run_test("_dl_pdf", _test_pdf, len(PDF_URLS))
 
-    def _test_excel():
-        p = Path(tmpdir) / "dl_test.xlsx"
-        return fp._dl_excel(fspec, p, profile)
+# ── _dl_excel ─────────────────────────────────────────────────────────────
+fp._search_for_filetype = lambda *_, **__: XLSX_URLS
 
-    run_test("_dl_excel", _test_excel, len(XLSX_URLS))
+def _test_excel():
+    p = Path(tmpdir) / "dl_test.xlsx"
+    return fp._dl_excel(fspec, p, profile)
 
-    # ── _dl_csv_web ───────────────────────────────────────────────────────────
-    fp._search_for_filetype = lambda *a, **kw: CSV_URLS
+run_test("_dl_excel", _test_excel, len(XLSX_URLS))
 
-    def _test_csv_web():
-        p = Path(tmpdir) / "dl_test.csv"
-        return fp._dl_csv_web(fspec, p, profile)
+# ── _dl_csv_web ───────────────────────────────────────────────────────────
+fp._search_for_filetype = lambda *_, **__: CSV_URLS
 
-    run_test("_dl_csv_web", _test_csv_web, len(CSV_URLS))
+def _test_csv_web():
+    p = Path(tmpdir) / "dl_test.csv"
+    return fp._dl_csv_web(fspec, p, profile)
 
-    # ── _dl_html ──────────────────────────────────────────────────────────────
-    fp._search = lambda *a, **kw: [{"link": u} for u in HTML_URLS]
+run_test("_dl_csv_web", _test_csv_web, len(CSV_URLS))
 
-    def _test_html():
-        p = Path(tmpdir) / "dl_test.html"
-        return fp._dl_html(fspec, p, profile)
+# ── _dl_html ──────────────────────────────────────────────────────────────
+fp._search = lambda *_, **__: [{"link": u} for u in HTML_URLS]
 
-    run_test("_dl_html", _test_html, len(HTML_URLS))
+def _test_html():
+    p = Path(tmpdir) / "dl_test.html"
+    return fp._dl_html(fspec, p, profile)
 
-    # ── _dl_generic ───────────────────────────────────────────────────────────
-    fp._search = lambda *a, **kw: [{"link": u} for u in GENERIC_URLS]
+run_test("_dl_html", _test_html, len(HTML_URLS))
 
-    def _test_generic():
-        p = Path(tmpdir) / "dl_test_generic.bin"
-        return fp._dl_generic(fspec, p, profile)
+# ── _dl_generic ───────────────────────────────────────────────────────────
+fp._search = lambda *_, **__: [{"link": u} for u in GENERIC_URLS]
 
-    run_test("_dl_generic", _test_generic, len(GENERIC_URLS))
+def _test_generic():
+    p = Path(tmpdir) / "dl_test_generic.bin"
+    return fp._dl_generic(fspec, p, profile)
+
+run_test("_dl_generic", _test_generic, len(GENERIC_URLS))
 
 # ── 汇总 ─────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 50)

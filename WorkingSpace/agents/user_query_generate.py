@@ -88,7 +88,7 @@ class UserQueryGenerator:
             result = self.llm.generate_json(
                 prompt,
                 system="你是一名专业的用户行为分析专家。基于用户的工作特征和文件环境，生成真实、自然的用户查询。只输出合法JSON，不要有任何注释或多余文字。",
-                max_tokens=2000
+                # max_tokens=2000
             )
             queries = result.get("queries", [])
             print(f"  → 生成 {len(queries)} 个user query")

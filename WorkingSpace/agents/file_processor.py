@@ -40,7 +40,7 @@ Step 3 — File Processor  (parallel edition)
   • 文件大小验证（至少1KB）
 
 """
-import csv, io, json, os, time, re
+import csv, io, json, os, time, re, subprocess, tempfile
 import threading
 import concurrent.futures
 from pathlib import Path
@@ -92,6 +92,48 @@ class FileProcessor:
     def _log(self, msg: str) -> None:
         with self._print_lock:
             print(msg)
+
+    # ── 双重下载辅助：requests → curl -L ──────────────────────────────────────
+    def _download_with_curl(self, url: str, save_path: str, timeout: int = 30) -> bool:
+        """先用 download_binary，失败后用 curl -L 重试。"""
+        if self.web.download_binary(url, save_path, timeout=timeout):
+            return True
+        self._log(f"    [CURL] fallback: {url[:75]}")
+        try:
+            result = subprocess.run(
+                ["curl", "-L", "-s", "--max-time", str(timeout),
+                 "-A", "Mozilla/5.0", "-o", save_path, url],
+                timeout=timeout + 10,
+            )
+            p = Path(save_path)
+            if result.returncode == 0 and p.exists() and p.stat().st_size > 0:
+                return True
+        except Exception as e:
+            self._log(f"    [CURL] error: {e}")
+        return False
+
+    def _download_html_with_curl(self, url: str, timeout: int = 30) -> bytes | None:
+        """先用 download_html，失败后用 curl -L 重试，返回原始 bytes。"""
+        html = self.web.download_html(url)
+        if html and len(html) > 500:
+            return html
+        self._log(f"    [CURL] HTML fallback: {url[:75]}")
+        try:
+            tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
+            result = subprocess.run(
+                ["curl", "-L", "-s", "--max-time", str(timeout),
+                 "-A", "Mozilla/5.0", "-o", tmp, url],
+                timeout=timeout + 10,
+            )
+            p = Path(tmp)
+            if result.returncode == 0 and p.exists() and p.stat().st_size > 500:
+                data = p.read_bytes()
+                p.unlink(missing_ok=True)
+                return data
+            p.unlink(missing_ok=True)
+        except Exception as e:
+            self._log(f"    [CURL] HTML error: {e}")
+        return None
 
     # ── rate-limited wrappers ──────────────────────────────────────────────
     def _llm_generate(self, prompt, system=GEN_SYSTEM,
@@ -309,7 +351,7 @@ class FileProcessor:
         pdf_urls = self._search_for_pdf(query, num=8)
         for url in pdf_urls:
             self._log(f"    [PDF] {url[:75]}")
-            ok = self.web.download_binary(url, str(abs_path), timeout=60)
+            ok = self._download_with_curl(url, str(abs_path), timeout=60)
             if ok:
                 kb = abs_path.stat().st_size // 1024
                 self._log(f"    [OK] PDF {kb} KB -> {abs_path.name}")
@@ -327,7 +369,7 @@ class FileProcessor:
             if not url:
                 continue
             self._log(f"    [HTML] {url[:75]}")
-            html = self.web.download_html(url)
+            html = self._download_html_with_curl(url, timeout=30)
             if html and len(html) > 500:
                 html_path = abs_path.with_suffix(".html")
                 html_path.write_bytes(html)
@@ -343,7 +385,7 @@ class FileProcessor:
         xl_urls = self._search_for_filetype(query, exts=["xlsx", "xls"], num=6)
         for url in xl_urls:
             self._log(f"    [XLS] {url[:75]}")
-            ok = self.web.download_binary(url, str(abs_path), timeout=45)
+            ok = self._download_with_curl(url, str(abs_path), timeout=45)
             if ok:
                 kb = abs_path.stat().st_size // 1024
                 self._log(f"    [OK] Excel {kb} KB -> {abs_path.name}")
@@ -359,7 +401,7 @@ class FileProcessor:
         csv_urls = self._search_for_filetype(query, exts=["csv"], num=4)
         for url in csv_urls:
             self._log(f"    [CSV] {url[:75]}")
-            ok = self.web.download_binary(url, str(abs_path), timeout=30)
+            ok = self._download_with_curl(url, str(abs_path), timeout=30)
             if ok:
                 kb = abs_path.stat().st_size // 1024
                 self._log(f"    [OK] CSV {kb} KB -> {abs_path.name}")
@@ -376,7 +418,7 @@ class FileProcessor:
             url = r.get("link", "")
             if not url:
                 continue
-            ok = self.web.download_binary(url, str(abs_path), timeout=30)
+            ok = self._download_with_curl(url, str(abs_path), timeout=30)
             if ok:
                 return True
         return self._jina_fallback(fspec, abs_path.with_suffix(".md"), profile)
