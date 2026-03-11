@@ -101,7 +101,7 @@ if str(_WORKING_SPACE) not in sys.path:
     sys.path.insert(0, str(_WORKING_SPACE))
 
 from config.config_loader import load_config
-from main import run_pipeline          # ← 直接 import，不再用 subprocess
+from main import run_pipeline   # ← 直接 import，不再用 subprocess
 
 _cfg = load_config()
 _batch_cfg = _cfg.get("batch_generate_config", {})
@@ -189,19 +189,25 @@ def generate_env_for_profile(
     envs_dir: Path,
     skip_existing: bool = False,
 ) -> bool:
-    """为单个用户画像生成环境（直接调用 run_pipeline）。"""
+    """为单个用户画像生成环境（直接调用 run_pipeline）。
+
+    skip_existing=True 时的逻辑：
+      1. env 文件系统目录已存在 → 完全跳过
+      2. 不存在               → 完整 3 步 pipeline
+    """
     info = get_profile_info(profile_path)
     if not info:
         return False
 
-    env_name = f"{info['name']}_{info['role']}"
-    env_path = envs_dir / env_name
+    env_name    = f"{info['name']}_{info['role']}"
+    env_path    = envs_dir / env_name
+    profile_dir = env_path / env_name   # Steps 1-3 生成的文件系统目录
 
-    # 检查是否已存在
-    if skip_existing and env_path.exists():
-        print(f"  [SKIP] {env_name} (已存在)")
+    if skip_existing and profile_dir.exists():
+        print(f"  [SKIP] {env_name} (env 文件已存在)")
         return True
 
+    # 从头完整生成
     print(f"  [处理] {env_name}")
     print(f"    画像: {profile_path}")
     print(f"    输出: {env_path}")

@@ -11,3 +11,7 @@ WorkingSpace/output/
 __pycache__/
 # keys
 config/baseline_using.yaml
+yes
+.gitignore
+yes.pub
+newkey.txt
