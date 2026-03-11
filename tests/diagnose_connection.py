@@ -3,11 +3,15 @@
 Connectivity diagnosis: tests both direct and proxy connections.
 Run: conda activate datapipe && python user_simulator_agent/tests/diagnose_connection.py
 """
-import os, ssl, httpx
+import os, sys, ssl, httpx
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config.config_loader import load_config
+_api_cfg = load_config().get("api_config", {})
 
-LLM_API_KEY  = os.getenv("LLM_API_KEY",  "sk-U2BkWhBzdLcJn01ovsXXESVO2nboXEjKqjj8WxECS6Dom5UZ")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.gptplus5.com/v1")
-LLM_PROXY    = os.getenv("LLM_PROXY",    "")
+LLM_API_KEY  = os.getenv("LLM_API_KEY",  _api_cfg.get("OPENAI_API_KEY",  ""))
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", _api_cfg.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+LLM_PROXY    = os.getenv("LLM_PROXY",    _api_cfg.get("LLM_PROXY",       ""))
 
 ssl._create_default_https_context = ssl._create_unverified_context
 HEADERS = {"Authorization": f"Bearer {LLM_API_KEY}"}

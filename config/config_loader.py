@@ -19,7 +19,7 @@ import yaml
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_FILE = _PROJECT_ROOT / "config" / "baseline_using.yaml"
 
-_config: dict | None = None
+_config = None  # type: dict
 
 
 def load_config() -> dict:

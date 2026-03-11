@@ -30,10 +30,10 @@ from config.config_loader import load_config
 _cfg = load_config()
 _api = _cfg.get("api_config", {})
 
-LLM_API_KEY  = os.getenv("LLM_API_KEY",  _api.get("LLM_API_KEY",  ""))
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", _api.get("LLM_BASE_URL", "https://api.openai.com/v1"))
-LLM_MODEL    = os.getenv("LLM_MODEL",    _api.get("LLM_MODEL",    "gpt-4o"))
-LLM_PROXY    = os.getenv("LLM_PROXY",    _api.get("LLM_PROXY",    None))
+LLM_API_KEY  = os.getenv("LLM_API_KEY",  _api.get("OPENAI_API_KEY",  ""))
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", _api.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+LLM_MODEL    = os.getenv("LLM_MODEL",    _api.get("LLM_MODEL",      "gpt-4o"))
+LLM_PROXY    = os.getenv("LLM_PROXY",    _api.get("LLM_PROXY",      None))
 
 # ─── 全局 client（单例） ──────────────────────────────────────────────────────
 ssl._create_default_https_context = ssl._create_unverified_context
