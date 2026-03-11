@@ -41,6 +41,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 _client = OpenAI(
     api_key=LLM_API_KEY,
     base_url=LLM_BASE_URL,
+    timeout=60.0,
     http_client=httpx.Client(
         verify=False,
         proxy=LLM_PROXY or None,

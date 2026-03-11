@@ -3,17 +3,19 @@
 批量环境生成器
 ===============
 遍历 Outputs/profiles 目录中的用户画像 JSON 文件，
-直接调用 WorkingSpace/main.py 的 run_pipeline() 生成环境。
+批量调用 WorkingSpace/main.py 生成环境。
 
 使用方式：
   python batch_generate.py
   python batch_generate.py --profiles-dir Outputs/profiles
 """
 
-import os, sys, json, argparse, io, threading, contextvars
+import os, sys, json, argparse, threading, traceback
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
+import contextvars
 
 # 每个并发 task 的日志前缀，主线程为空
 _task_tag: contextvars.ContextVar[str] = contextvars.ContextVar("_task_tag", default="")
@@ -33,7 +35,6 @@ class _TeeWriter:
 
     def __init__(self, *streams):
         self._streams = streams
-        # 保留 encoding 属性以兼容 reconfigure 等检测
         self.encoding = getattr(streams[0], "encoding", "utf-8")
 
     def write(self, data):
@@ -41,9 +42,7 @@ class _TeeWriter:
             return 0
         tag = _task_tag.get("")
         if tag:
-            # 给每一行加上 tag 前缀（保留末尾换行）
             lines = data.split("\n")
-            # 最后一个空元素说明 data 以 \n 结尾，不需要加 tag
             tagged_parts = []
             for i, line in enumerate(lines):
                 if i == len(lines) - 1 and line == "":
@@ -66,7 +65,6 @@ class _TeeWriter:
             except Exception:
                 pass
 
-    # 让 reconfigure 等调用不报错
     def __getattr__(self, name):
         return getattr(self._streams[0], name)
 
@@ -85,23 +83,22 @@ def _setup_tee_logging(log_dir: Path) -> Path:
 
 # ─── 项目路径设置 ───────────────────────────────────────────────────────────────
 _CONTROL_CENTER = Path(__file__).resolve().parent
-_PROJECT_ROOT   = _CONTROL_CENTER.parent              # user_simulator_agent/
+_PROJECT_ROOT   = _CONTROL_CENTER.parent
 _WORKING_SPACE  = _PROJECT_ROOT / "WorkingSpace"
+_MAIN_SCRIPT    = _WORKING_SPACE / "main.py"
 
 # 默认路径配置
 DEFAULT_PROFILES_DIR = _PROJECT_ROOT / "Outputs" / "profiles"
 DEFAULT_ENVS_DIR     = _PROJECT_ROOT / "Outputs" / "environments"
 DEFAULT_LOG_DIR      = _PROJECT_ROOT / "Log"
 
-# ─── 加载配置 & 导入 pipeline ─────────────────────────────────────────────────
-# 把 project root 和 WorkingSpace 都加到 sys.path
+# ─── 加载配置 ─────────────────────────────────────────────────────────────────
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 if str(_WORKING_SPACE) not in sys.path:
     sys.path.insert(0, str(_WORKING_SPACE))
 
 from config.config_loader import load_config
-from main import run_pipeline          # ← 直接 import，不再用 subprocess
 
 _cfg = load_config()
 _batch_cfg = _cfg.get("batch_generate_config", {})
@@ -118,10 +115,10 @@ def _resolve(val: str | None, default: Path) -> str:
 
 def parse_args():
     """解析命令行参数（默认值从 config/baseline.yaml 读取）"""
-    profiles_dir_default  = _resolve(_batch_cfg.get("profiles_dir"), DEFAULT_PROFILES_DIR)
-    envs_dir_default      = _resolve(_batch_cfg.get("envs_dir"),     DEFAULT_ENVS_DIR)
-    pattern_default       = _batch_cfg.get("pattern")      or "*.json"
-    skip_existing_default = bool(_batch_cfg.get("skip_existing", False))
+    profiles_dir_default    = _resolve(_batch_cfg.get("profiles_dir"), DEFAULT_PROFILES_DIR)
+    envs_dir_default        = _resolve(_batch_cfg.get("envs_dir"),     DEFAULT_ENVS_DIR)
+    pattern_default         = _batch_cfg.get("pattern")      or "*.json"
+    skip_existing_default   = bool(_batch_cfg.get("skip_existing", False))
     max_concurrency_default = int(_batch_cfg.get("max_concurrency", 3))
 
     parser = argparse.ArgumentParser(
@@ -160,23 +157,28 @@ def parse_args():
     return parser.parse_args()
 
 
-def _sanitize_name(name: str) -> str:
-    """移除 Windows 目录名中不允许的字符。"""
-    for ch in r'\/:*?"<>|':
-        name = name.replace(ch, "_")
-    return name.strip()
-
-
 def get_profile_info(profile_path: Path) -> dict | None:
-    """从用户画像 JSON 文件中提取基本信息。"""
+    """从用户画像文件中提取基本信息，用于生成输出目录名"""
     try:
         with open(profile_path, "r", encoding="utf-8") as f:
             profile = json.load(f)
 
         basic = profile.get("基本信息", {})
-        name  = basic.get("姓名", "unknown")
-        role  = basic.get("职业", "unknown")
-        role_clean = _sanitize_name(role)
+        name = basic.get("姓名", "unknown")
+        role = basic.get("职业", "unknown")
+
+        role_clean = (
+            role.replace(" ", "_")
+                .replace("/", "_")
+                .replace("\\", "_")
+                .replace(":", "_")
+                .replace("*", "_")
+                .replace("?", "_")
+                .replace('"', "_")
+                .replace("<", "_")
+                .replace(">", "_")
+                .replace("|", "_")
+        )
 
         return {"name": name, "role": role_clean, "profile": profile}
     except Exception as e:
@@ -186,44 +188,121 @@ def get_profile_info(profile_path: Path) -> dict | None:
 
 def generate_env_for_profile(
     profile_path: Path,
-    envs_dir: Path,
-    skip_existing: bool = False,
+    output_dir: Path,
+    main_script: Path,
+    skip_existing: bool = False
 ) -> bool:
-    """为单个用户画像生成环境（直接调用 run_pipeline）。"""
+    """为单个用户画像生成环境"""
     info = get_profile_info(profile_path)
     if not info:
         return False
 
     env_name = f"{info['name']}_{info['role']}"
-    env_path = envs_dir / env_name
+    env_path = output_dir / env_name
 
-    # 检查是否已存在
     if skip_existing and env_path.exists():
         print(f"  [SKIP] {env_name} (已存在)")
         return True
 
     print(f"  [处理] {env_name}")
-    print(f"    画像: {profile_path}")
     print(f"    输出: {env_path}")
 
+    output_full_path = output_dir / env_name
+
     try:
-        run_pipeline(
-            user_profile_path=profile_path,
-            output_dir=env_path,
-            profile_dir_name=env_name,
+        profile_arg = profile_path.relative_to(_WORKING_SPACE)
+    except ValueError:
+        profile_arg = profile_path
+
+    try:
+        output_arg = output_full_path.relative_to(_WORKING_SPACE)
+    except ValueError:
+        output_arg = output_full_path
+
+    cmd = [
+        sys.executable,
+        str(main_script),
+        "--user-profile", str(profile_arg),
+        "--output", str(output_arg)
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(_WORKING_SPACE),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace"
         )
-        print(f"  [OK] {env_name} 生成成功")
-        return True
+
+        if result.returncode == 0:
+            print(f"  [OK] {env_name} 生成成功")
+            generate_file_mappings(env_path, info['profile'])
+            return True
+        else:
+            print(f"  [FAIL] {env_name} 生成失败")
+            print(f"    stderr: {result.stderr[-500:]}")
+            return False
     except Exception as e:
-        import traceback
         print(f"  [FAIL] {env_name} 生成失败: {e}")
         traceback.print_exc()
         return False
 
 
+def generate_file_mappings(env_path: Path, profile: dict):
+    """
+    根据生成的环境目录结构，创建 Windows 和 Linux 的文件映射表。
+
+    映射规则：
+    - Windows: C/ → C:\\, D/ → D:\\
+    - Linux: C/ → ~/, D/ → ~/workspace/
+    """
+    computer_profile_dir = env_path / "computer_profile"
+
+    if not computer_profile_dir.exists():
+        print(f"    [Skip] 未找到 computer_profile 目录，跳过映射表生成")
+        return
+
+    file_paths = []
+    for file_path in computer_profile_dir.rglob("*"):
+        if file_path.is_file():
+            rel_path = file_path.relative_to(computer_profile_dir)
+            file_paths.append(str(rel_path).replace("\\", "/"))
+
+    windows_mapping = {}
+    for path in file_paths:
+        if path.startswith("C/"):
+            win_src = "C:\\" + path[2:].replace("/", "\\")
+        elif path.startswith("D/"):
+            win_src = "D:\\" + path[2:].replace("/", "\\")
+        else:
+            win_src = path.replace("/", "\\")
+        windows_mapping[path] = win_src
+
+    linux_mapping = {}
+    for path in file_paths:
+        if path.startswith("C/"):
+            linux_src = "~/" + path[2:]
+        elif path.startswith("D/"):
+            linux_src = "~/workspace/" + path[2:]
+        else:
+            linux_src = path
+        linux_mapping[path] = linux_src
+
+    windows_map_path = env_path / "MAP_Windows.json"
+    with open(windows_map_path, "w", encoding="utf-8") as f:
+        json.dump(windows_mapping, f, ensure_ascii=False, indent=2)
+    print(f"    → MAP_Windows.json 已生成")
+
+    linux_map_path = env_path / "MAP_Linux.json"
+    with open(linux_map_path, "w", encoding="utf-8") as f:
+        json.dump(linux_mapping, f, ensure_ascii=False, indent=2)
+    print(f"    → MAP_Linux.json 已生成")
+
+
 def main():
     """主函数"""
-    # ── 设置 tee 日志 ──────────────────────────────────────────────────
     log_path = _setup_tee_logging(DEFAULT_LOG_DIR)
 
     print("\n" + "=" * 60)
@@ -231,18 +310,19 @@ def main():
     print("=" * 60)
     print(f"  日志文件: {log_path}")
 
-    # 解析参数
     args = parse_args()
     profiles_dir = Path(args.profiles_dir)
     envs_dir = Path(args.envs_dir)
     max_concurrency = args.max_concurrency
 
-    # 检查路径
     if not profiles_dir.exists():
         print(f"\n[Error] 用户画像目录不存在: {profiles_dir}")
         return 1
 
-    # 创建输出目录
+    if not _MAIN_SCRIPT.exists():
+        print(f"\n[Error] main.py 不存在: {_MAIN_SCRIPT}")
+        return 1
+
     envs_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n  用户画像目录: {profiles_dir}")
@@ -250,7 +330,6 @@ def main():
     print(f"  匹配模式: {args.pattern}")
     print(f"  最大并发数: {max_concurrency}")
 
-    # 查找所有用户画像文件
     profile_files = sorted(profiles_dir.glob(args.pattern))
 
     if not profile_files:
@@ -270,20 +349,18 @@ def main():
         success = generate_env_for_profile(
             profile_file,
             envs_dir,
-            skip_existing=args.skip_existing,
+            _MAIN_SCRIPT,
+            skip_existing=args.skip_existing
         )
         return profile_file, success
 
     with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-        futures = {
-            executor.submit(_task, pf): pf for pf in profile_files
-        }
+        futures = {executor.submit(_task, pf): pf for pf in profile_files}
         for future in as_completed(futures):
             pf = futures[future]
             try:
                 _, success = future.result()
             except Exception as e:
-                import traceback
                 print(f"  [FAIL] {pf.name} 未捕获异常: {e}")
                 traceback.print_exc()
                 success = False
@@ -294,7 +371,8 @@ def main():
                 else:
                     results["fail"] += 1
 
-    # 汇总
+    print()
+
     print("=" * 60)
     print("  生成完成")
     print("=" * 60)
@@ -302,7 +380,6 @@ def main():
     print(f"  成功: {results['success']}")
     print(f"  失败: {results['fail']}")
     print(f"  跳过: {results['skip']}")
-    print(f"\n  日志文件: {log_path}")
     print()
 
     return 0 if results["fail"] == 0 else 1

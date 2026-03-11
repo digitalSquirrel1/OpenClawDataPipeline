@@ -8,6 +8,6 @@ tests/dl_output/*
 # logs
 Log/*
 WorkingSpace/output/
-__pycache__/
 # keys
+config/baseline.yaml
 config/baseline_using.yaml
