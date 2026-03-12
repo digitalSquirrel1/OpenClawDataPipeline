@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.config_loader import load_config
 _api_cfg = load_config().get("api_config", {})
 
-LLM_API_KEY  = os.getenv("LLM_API_KEY",  _api_cfg.get("OPENAI_API_KEY",  ""))
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", _api_cfg.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+LLM_API_KEY  = os.getenv("LLM_API_KEY",  _api_cfg.get("LLM_API_KEY",  ""))
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", _api_cfg.get("LLM_BASE_URL", "https://api.openai.com/v1"))
 LLM_PROXY    = os.getenv("LLM_PROXY",    _api_cfg.get("LLM_PROXY",       ""))
 
 ssl._create_default_https_context = ssl._create_unverified_context

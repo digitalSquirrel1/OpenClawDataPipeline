@@ -1,8 +1,8 @@
 # 这是个用于代码上库脱敏的文件，不能跑的。实际能跑的是baseline_using.yaml
 
 api_config:
-  OPENAI_API_KEY: "sk-xxx"
-  OPENAI_BASE_URL: "xxx"
+  LLM_API_KEY: "sk-xxx"
+  LLM_BASE_URL: "xxx"
   LLM_MODEL: "gemini-3-flash-preview"
   LLM_PROXY: null
   LLM_BACKEND: "openai"   # "openai" | "anthropic"
@@ -19,7 +19,7 @@ pipeline_config:           # main.py 运行参数
 
 generate_user_profile_config: # 生成user profile
   PROFILE_GENERATION_PROMPT: "prompts/profile_generation_prompt.md"
-  output_dir: null   # null → defaults to Outputs/profiles/
+  profiles_dir: null   # null → defaults to Outputs/profiles/
   count: 70
 
 batch_generate_config: # 根据user_profile生成environment

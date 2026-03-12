@@ -120,9 +120,6 @@ def parse_args():
     """解析命令行参数（默认值从 config/baseline.yaml 读取）"""
     profiles_dir_default  = _resolve(_batch_cfg.get("profiles_dir"), DEFAULT_PROFILES_DIR)
     envs_dir_default      = _resolve(_batch_cfg.get("envs_dir"),     DEFAULT_ENVS_DIR)
-    pattern_default       = _batch_cfg.get("pattern")      or "*.json"
-    skip_existing_default = bool(_batch_cfg.get("skip_existing", False))
-    max_concurrency_default = int(_batch_cfg.get("max_concurrency", 3))
 
     parser = argparse.ArgumentParser(
         description="批量根据用户画像生成环境"
@@ -140,22 +137,9 @@ def parse_args():
         help=f"环境输出目录（默认: {envs_dir_default}）"
     )
     parser.add_argument(
-        "--pattern",
-        type=str,
-        default=pattern_default,
-        help=f"匹配文件名模式（默认: {pattern_default}）"
-    )
-    parser.add_argument(
-        "--skip-existing",
+        "--overwrite-existing",
         action="store_true",
-        default=skip_existing_default,
-        help="跳过已生成的环境"
-    )
-    parser.add_argument(
-        "--max-concurrency",
-        type=int,
-        default=max_concurrency_default,
-        help=f"最大并发数（默认: {max_concurrency_default}）"
+        help="覆盖已生成的环境（默认跳过）"
     )
     return parser.parse_args()
 
@@ -256,11 +240,11 @@ def generate_file_mappings(env_path: Path, profile_dir: Path):
 def generate_env_for_profile(
     profile_path: Path,
     envs_dir: Path,
-    skip_existing: bool = False,
+    overwrite_existing: bool = False,
 ) -> bool:
     """为单个用户画像生成环境（直接调用 run_pipeline）。
 
-    skip_existing=True 时的逻辑：
+    overwrite_existing=False（默认）时的逻辑：
       1. env zip 文件已存在 → 视为完整生成，完全跳过
       2. 不存在             → 完整 3 步 pipeline
     """
@@ -273,7 +257,7 @@ def generate_env_for_profile(
     profile_dir = env_path / env_name   # Steps 1-3 生成的文件系统目录
     zip_path    = env_path / f"{env_name}.zip"
 
-    if skip_existing and zip_path.exists():
+    if not overwrite_existing and zip_path.exists():
         print(f"  [SKIP] {env_name} (zip 已存在)")
         return True
 
@@ -318,7 +302,7 @@ def main():
     args = parse_args()
     profiles_dir = Path(args.profiles_dir)
     envs_dir = Path(args.envs_dir)
-    max_concurrency = args.max_concurrency
+    max_concurrency = int(_cfg.get("pipeline_config", {}).get("MAX_LLM_CALLS", 4))
 
     # 检查路径
     if not profiles_dir.exists():
@@ -330,11 +314,10 @@ def main():
 
     print(f"\n  用户画像目录: {profiles_dir}")
     print(f"  环境输出目录: {envs_dir}")
-    print(f"  匹配模式: {args.pattern}")
     print(f"  最大并发数: {max_concurrency}")
 
     # 查找所有用户画像文件
-    profile_files = sorted(profiles_dir.glob(args.pattern))
+    profile_files = sorted(profiles_dir.glob("*.json"))
 
     if not profile_files:
         print(f"\n[Info] 未找到匹配的用户画像文件")
@@ -353,7 +336,7 @@ def main():
         success = generate_env_for_profile(
             profile_file,
             envs_dir,
-            skip_existing=args.skip_existing,
+            overwrite_existing=args.overwrite_existing,
         )
         return profile_file, success
 

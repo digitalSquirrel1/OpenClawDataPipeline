@@ -11,7 +11,7 @@ User Profile 生成器
 
 """
 
-import os, sys, json, re, time, math, random
+import os, sys, json, re, time, random
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -41,13 +41,7 @@ _api_cfg = _cfg.get("api_config", {})
 _gen_cfg = _cfg.get("generate_user_profile_config", {})
 
 # ─── LLM API 配置 ────────────────────────────────────────────────────────────
-LLM_API_KEY  = os.getenv("LLM_API_KEY",  _api_cfg.get("OPENAI_API_KEY",  ""))
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", _api_cfg.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
 LLM_MODEL    = os.getenv("LLM_MODEL",    _api_cfg.get("LLM_MODEL",       "gpt-4o"))
-LLM_PROXY    = os.getenv("LLM_PROXY",    _api_cfg.get("LLM_PROXY",       None))
-
-# ─── 每次 LLM 调用生成的画像数量 ───────────────────────────────────────────────
-PROFILES_PER_CALL = 3
 
 # ─── 并行线程数（复用 pipeline_config.MAX_WORKERS 或默认 4）─────────────────────
 _pipeline_cfg = _cfg.get("pipeline_config", {})
@@ -98,20 +92,17 @@ class ProfileGenerator:
         occupation = random.choice(OCCUPATIONS)
         return gender, age, occupation
 
-    def _build_identity_block(self, n: int) -> str:
-        """构建 n 个人物设定的文本块"""
-        lines = []
-        for i in range(n):
-            g, a, o = self._get_random_attributes()
-            lines.append(f"人物{i+1}：性别 {g}，年龄 {a}岁，职业 {o}")
-        return "\n".join(lines)
+    def _build_identity_block(self) -> str:
+        """构建单个人物设定的文本块"""
+        g, a, o = self._get_random_attributes()
+        return f"人物：性别 {g}，年龄 {a}岁，职业 {o}"
 
-    def _call_llm_batch(self, batch_index: int, need: int) -> list[dict]:
+    def _call_llm(self, call_index: int) -> dict:
         """
-        单次 LLM 调用，生成 need 个画像（need <= PROFILES_PER_CALL）。
-        返回解析出的 profile 字典列表。
+        单次 LLM 调用，生成 1 个画像。
+        返回解析出的 profile 字典。
         """
-        identity_block = self._build_identity_block(need)
+        identity_block = self._build_identity_block()
         prompt = self.prompt_template.replace("{identity_assignments}", identity_block)
 
         start_time = time.time()
@@ -120,24 +111,19 @@ class ProfileGenerator:
             model=self.model,
         )
         elapsed = time.time() - start_time
-        print(f"  [LLM] 批次 {batch_index} 完成，耗时 {elapsed:.1f}s")
+        print(f"  [LLM] 第 {call_index} 次调用完成，耗时 {elapsed:.1f}s")
 
         # 提取 JSON
         code_block = re.search(r'```(?:json)?\s*(.*?)```', content, re.DOTALL)
         if code_block:
             json_str = code_block.group(1).strip()
         else:
-            first_bracket = content.find("[")
-            last_bracket = content.rfind("]")
-            if first_bracket != -1 and last_bracket > first_bracket:
-                json_str = content[first_bracket:last_bracket + 1]
+            first_brace = content.find("{")
+            last_brace = content.rfind("}")
+            if first_brace != -1 and last_brace > first_brace:
+                json_str = content[first_brace:last_brace + 1]
             else:
-                first_brace = content.find("{")
-                last_brace = content.rfind("}")
-                if first_brace != -1 and last_brace > first_brace:
-                    json_str = content[first_brace:last_brace + 1]
-                else:
-                    json_str = content
+                json_str = content
 
         # 清洗 LLM 常见的 JSON 格式问题：尾逗号
         json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
@@ -145,19 +131,21 @@ class ProfileGenerator:
         try:
             parsed = json.loads(json_str)
         except json.JSONDecodeError as e:
-            print(f"  [Debug] 批次 {batch_index} JSON 解析失败: {e}")
+            print(f"  [Debug] 第 {call_index} 次调用 JSON 解析失败: {e}")
             print(f"  [Debug] json_str 前 500 字符: {json_str[:500]}")
             raise
 
-        # 兼容：如果返回的是单个 dict 而非 list
-        if isinstance(parsed, dict):
-            parsed = [parsed]
-        if not isinstance(parsed, list):
-            raise ValueError(f"LLM 返回格式异常，期望 list，得到 {type(parsed).__name__}")
+        # 兼容：如果返回的是 list 则取第一个
+        if isinstance(parsed, list):
+            if len(parsed) == 0:
+                raise ValueError("LLM 返回空列表")
+            parsed = parsed[0]
+        if not isinstance(parsed, dict):
+            raise ValueError(f"LLM 返回格式异常，期望 dict，得到 {type(parsed).__name__}")
 
         return parsed
 
-    def _save_profile(self, profile: dict, index: int, output_dir: Path) -> Path:
+    def _save_profile(self, profile: dict, index: int, profiles_dir: Path) -> Path:
         """将单个画像立即写入磁盘，返回文件路径。"""
         basic = profile.get("基本信息", {})
         name = basic.get("姓名", "Unknown")
@@ -166,7 +154,7 @@ class ProfileGenerator:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_role = role.replace(" ", "_").replace("/", "_")
         filename = f"user_profile_{index}_{safe_role}_{timestamp}.json"
-        filepath = output_dir / filename
+        filepath = profiles_dir / filename
         filepath.write_text(
             json.dumps(profile, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -174,53 +162,43 @@ class ProfileGenerator:
         print(f"  [Saved] #{index}: {name} ({role}) -> {filepath.name}")
         return filepath
 
-    def generate_profiles(self, count: int, output_dir: Path) -> list[Path]:
+    def generate_profiles(self, count: int, profiles_dir: Path) -> list[Path]:
         """
         并行生成 count 个用户画像。
-        每次 LLM 调用产出 PROFILES_PER_CALL 个，用线程池并行调度。
-        每个画像解析成功后立即写入磁盘，不依赖全部批次完成。
+        每次 LLM 调用产出 1 个画像，用线程池并行调度。
+        每个画像解析成功后立即写入磁盘。
         """
         import threading
-        num_calls = math.ceil(count / PROFILES_PER_CALL)
-        # 最后一个批次可能不足 PROFILES_PER_CALL
-        batch_sizes = [PROFILES_PER_CALL] * (num_calls - 1) + [count - PROFILES_PER_CALL * (num_calls - 1)]
 
-        print(f"  [Plan] 总计 {count} 个画像，分 {num_calls} 批调用 LLM（每批 {PROFILES_PER_CALL} 个），并行度 {MAX_WORKERS}")
+        print(f"  [Plan] 总计 {count} 个画像，共 {count} 次 LLM 调用，并行度 {MAX_WORKERS}")
 
         saved_files: list[Path] = []
-        failed_batches = 0
+        failed_calls = 0
         _lock = threading.Lock()
-        _counter = [0]  # 全局递增序号（用 list 以便闭包可修改）
 
-        def _process_batch(batch_index: int, need: int):
-            """调用 LLM 并将每个画像即时落盘。"""
-            nonlocal failed_batches
+        def _process_call(call_index: int):
+            """调用 LLM 并将画像即时落盘。"""
+            nonlocal failed_calls
             try:
-                profiles = self._call_llm_batch(batch_index, need)
-                print(f"  [OK] 批次 {batch_index} 解析成功，得到 {len(profiles)} 个画像")
-                for profile in profiles:
-                    with _lock:
-                        _counter[0] += 1
-                        idx = _counter[0]
-                        if idx > count:
-                            return  # 已达 count 上限，丢弃多余
-                    filepath = self._save_profile(profile, idx, output_dir)
-                    with _lock:
-                        saved_files.append(filepath)
+                profile = self._call_llm(call_index)
+                print(f"  [OK] 第 {call_index} 次调用解析成功")
+                filepath = self._save_profile(profile, call_index, profiles_dir)
+                with _lock:
+                    saved_files.append(filepath)
             except Exception as e:
                 with _lock:
-                    failed_batches += 1
-                print(f"  [Error] 批次 {batch_index} 失败: {e}")
+                    failed_calls += 1
+                print(f"  [Error] 第 {call_index} 次调用失败: {e}")
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
             futures = [
-                pool.submit(_process_batch, i + 1, batch_sizes[i])
-                for i in range(num_calls)
+                pool.submit(_process_call, i + 1)
+                for i in range(count)
             ]
             for f in as_completed(futures):
                 f.result()  # 触发异常打印（实际已在内部 catch）
 
-        print(f"\n  [Summary] 成功生成 {len(saved_files)}/{count} 个用户画像（{failed_batches} 批失败）")
+        print(f"\n  [Summary] 成功生成 {len(saved_files)}/{count} 个用户画像（{failed_calls} 次调用失败）")
         return saved_files
 
 
@@ -231,14 +209,14 @@ def main():
     print("=" * 60)
 
     # 从配置读取输出目录和数量
-    _output_dir_str = _gen_cfg.get("output_dir")
-    output_dir = Path(_output_dir_str) if _output_dir_str else _PROFILES_DIR
+    _profiles_dir_str = _gen_cfg.get("profiles_dir")
+    profiles_dir = Path(_profiles_dir_str) if _profiles_dir_str else _PROFILES_DIR
 
     count = _gen_cfg.get("count") or 3
 
     # 创建输出目录
-    output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\n  输出目录: {output_dir}")
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\n  输出目录: {profiles_dir}")
     print(f"  生成数量: {count}")
 
     # 初始化生成器
@@ -246,7 +224,7 @@ def main():
 
     # 并行生成并保存用户画像
     print("\n[步骤 1/1] 并行生成并保存用户画像")
-    saved_files = generator.generate_profiles(count, output_dir)
+    saved_files = generator.generate_profiles(count, profiles_dir)
 
     if not saved_files:
         print("\n[Error] 生成用户画像失败，请检查 API 配置")
