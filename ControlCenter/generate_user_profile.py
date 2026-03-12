@@ -25,7 +25,7 @@ if sys.platform == "win32":
         pass
 
 # ─── 项目路径设置 ───────────────────────────────────────────────────────────────
-_CONTROL_CENTER = Path(__file__).parent
+_CONTROL_CENTER = Path(__file__).resolve().parent
 _PROJECT_ROOT = _CONTROL_CENTER.parent
 # profiles 目录放在项目根目录的 Outputs 下
 _OUTPUTS_DIR = _PROJECT_ROOT / "Outputs"
@@ -208,9 +208,13 @@ def main():
     print("  User Profile 生成器（随机身份引擎版）")
     print("=" * 60)
 
-    # 从配置读取输出目录和数量
+    # 从配置读取输出目录和数量（相对路径基于 _PROJECT_ROOT）
     _profiles_dir_str = _gen_cfg.get("profiles_dir")
-    profiles_dir = Path(_profiles_dir_str) if _profiles_dir_str else _PROFILES_DIR
+    if _profiles_dir_str:
+        p = Path(_profiles_dir_str)
+        profiles_dir = p if p.is_absolute() else _PROJECT_ROOT / p
+    else:
+        profiles_dir = _PROFILES_DIR
 
     count = _gen_cfg.get("count") or 3
 
