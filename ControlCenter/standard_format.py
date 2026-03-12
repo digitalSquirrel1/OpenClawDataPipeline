@@ -6,12 +6,8 @@ standard_format.py — 将 queries_with_skills 目录下的 JSON 文件标准化
   对每个原 JSON 文件中的每组 results（topic + queries + skills），生成一个独立的打包文件夹，
   文件夹结构：
     {profile_rel_path_stem}_{topic}/
-    ├── user_profile.json               # 从 profile_dir 复制
-    ├── computer_profile/
-    │   └── skills/
-    │       ├── {skill_category}/{skill_name}/  # 从 skills_dir 复制
-    │       └── ...
-    └── user_queries.json               # { "topic": ..., "queries": [...] }
+    ├── {原始profile文件名}.json        # 从 profile_dir 复制，保留原名
+    └── user_queries.json               # { "topic": ..., "queries": [...], "skills": [...] }
 
 使用方式：
   python ControlCenter/standard_format.py
@@ -74,18 +70,17 @@ def process_single_json(
         pack_dir = output_dir / folder_name
         pack_dir.mkdir(parents=True, exist_ok=True)
 
-        # 2. 复制 profile 到文件夹下，重命名为 user_profile.json
+        # 2. 复制 profile 到文件夹下，保留原文件名
         src_profile = profile_dir / profile_rel_path
         if not src_profile.exists():
             raise FileNotFoundError(
                 f"profile 文件不存在: {src_profile}\n"
                 f"  profile_rel_path={profile_rel_path}, profile_dir={profile_dir}"
             )
-        shutil.copy2(src_profile, pack_dir / "user_profile.json")
+        shutil.copy2(src_profile, pack_dir / Path(profile_rel_path).name)
 
-        # 3. 创建 computer_profile/skills/ 并复制各 skill 目录
-        skills_target = pack_dir / "computer_profile" / "skills"
-        skills_target.mkdir(parents=True, exist_ok=True)
+        # 3. 收集 skills 相对路径列表，并验证存在性
+        skill_rel_paths = []
         for skill_info in skills:
             skill_rel = skill_info["skill目录"]
             src_skill = skills_dir / skill_rel
@@ -94,15 +89,13 @@ def process_single_json(
                     f"skill 目录不存在: {src_skill}\n"
                     f"  skill目录={skill_rel}, skills_dir={skills_dir}"
                 )
-            dst_skill = skills_target / Path(skill_rel).name
-            if dst_skill.exists():
-                shutil.rmtree(dst_skill)
-            shutil.copytree(src_skill, dst_skill)
+            skill_rel_paths.append(skill_rel.replace("\\", "/"))
 
-        # 4. 写 user_queries.json
+        # 4. 写 user_queries.json（含 skills 相对路径）
         user_queries = {
             "topic": topic,
             "queries": queries,
+            "skills": skill_rel_paths,
         }
         with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
             json.dump(user_queries, f, ensure_ascii=False, indent=2)
