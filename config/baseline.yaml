@@ -12,6 +12,7 @@ web_tools_config:
   JINA_KEY: "xxx"
 
 pipeline_config:           # main.py 运行参数
+  MAX_LLM_CALLS: 50
   MAX_WORKERS: 8           # 并行下载/生成文件的线程数
   USER_PROFILE_PATH: "user_profile.txt"   # 独立运行 main.py 时的默认输入
   OUTPUT_DIR: "output"                     # 独立运行 main.py 时的默认输出
@@ -19,7 +20,7 @@ pipeline_config:           # main.py 运行参数
 generate_user_profile_config: # 生成user profile
   PROFILE_GENERATION_PROMPT: "prompts/profile_generation_prompt.md"
   output_dir: null   # null → defaults to Outputs/profiles/
-  count: 3
+  count: 70
 
 batch_generate_config: # 根据user_profile生成environment
   profiles_dir: null              # null → defaults to Outputs/profiles/
@@ -59,3 +60,25 @@ uquery_generate_config:         # ControlCenter/uquery_generate.py
       count: 10
   max_concurrency: 8            # 并发处理 profile 数量
   skip_existing: true           # 跳过已生成的 user_queries.json
+
+query_gen_with_topic_skill_profile_config:
+  topics_txt_path: "Outputs/topics.txt"        # topics 文件路径（相对于项目根目录）
+  profile_dir: "Outputs/profiles"              # 用户 profile 所在文件夹（相对于项目根目录）
+  output_dir: "Outputs/queries_with_skills"    # 输出目录（相对于项目根目录）
+  num_user_per_topic:  null                    # null代表profile_dir下面所有的都读，每个 topic 最多使用多少个 profile，null 表示全部使用
+  queries_per_combination: 5                   # 每组 (topic, profile) 生成的 query 数量
+  skip_existing: true                          # 跳过已生成的 profile 结果
+  PROMPT_TMPL: "prompts/query_gen_with_topic_skill_profile_prompt.md"
+
+topic_search_skills_config:
+  skills_json_path: "Outputs/skills.json"              # skills.json 路径（相对于项目根目录）
+  topic_to_skills_map: null                            # 倒排索引路径，null 则默认为 skills.json 同目录下的 skills_index.json
+  skills_dir: "D:\\PythonProject\\OpenClawDataPipeline\\user_simulator_agent\\Outputs\\skill_localize\\skills_library"
+  max_skills_per_topic: 5
+
+standard_format_config: # 标准格式化打包
+  info_dir: "Outputs/queries_with_skills"    # 输入: queries_with_skills JSON 目录
+  output_dir: "Outputs/standard_output"      # 输出: 打包文件夹目录
+  # profile_dir / skills_dir 留空则从其他配置段继承
+  profile_dir: null
+  skills_dir: null
