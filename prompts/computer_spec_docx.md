@@ -7,7 +7,7 @@
 请为该用户设计 {file_count}个 由用户自己创作的Word/文本文档文件（type=generated）。
 format 可以是 docx 或 txt。
 
-输出 JSON（只有files数组）：
+请直接输出有效的JSON，标准格式如下（只有files数组）：
 {{
   "files": [
     {{

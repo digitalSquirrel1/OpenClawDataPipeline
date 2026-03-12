@@ -7,7 +7,7 @@
 请为该用户设计 {file_count}个 可从公网下载的真实音频文件。
 sub_type 可以是 mp3, wav, m4a 等。
 
-输出 JSON（只有files数组）：
+请直接输出有效的JSON，标准格式如下（只有files数组）：
 {{
   "files": [
     {{

@@ -27,7 +27,7 @@
 8. Excel/CSV(生成) - 数据分析表、模型等
 9. Markdown报告(生成) - 深度分析报告草稿
 
-输出 JSON：
+请直接输出有效的JSON，标准格式如下：
 {{
   "file_counts": {{
     "PDF文件(可下载)": xx,

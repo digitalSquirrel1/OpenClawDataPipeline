@@ -6,7 +6,7 @@
 
 请为该用户设计 {file_count}个 可从公网下载保存的HTML网页文件。
 
-输出 JSON（只有files数组）：
+请直接输出有效的JSON，标准格式如下（只有files数组）：
 {{
   "files": [
     {{
