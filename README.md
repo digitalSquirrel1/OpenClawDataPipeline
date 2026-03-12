@@ -21,7 +21,7 @@ user_simulator_agent/
 ├── ControlCenter/             # 批量编排入口
 │   ├── generate_user_profile.py              # Step A: LLM 批量生成用户画像
 │   ├── batch_generate.py                     # Step B: 从画像批量生成模拟环境
-│   ├── query_gen_with_topic_skill_profile.py # Step C: 基于 topic+skills+profile 生成 query
+│   ├── query_gen_with_topic_skill_profile.py # Step C: 基于 topic+skills+profile+env(Optional) 生成 query
 │   ├── standard_format.py                    # Step D: 标准化打包输出
 │   ├── check_env.py                          # [即将废止] 环境校验辅助（被 batch_generate 内部调用）
 │   ├── query_generate.py                     # [即将废止] 旧版 query 生成
