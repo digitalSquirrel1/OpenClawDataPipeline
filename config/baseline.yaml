@@ -1,9 +1,9 @@
 # 这是个用于代码上库脱敏的文件，不能跑的。实际能跑的是baseline_using.yaml
 
 api_config:
-  LLM_API_KEY: "sk-xxx"
-  LLM_BASE_URL: "xxx"
-  LLM_MODEL: "gpt-5.2"
+  OPENAI_API_KEY: "sk-xxx"
+  OPENAI_BASE_URL: "xxx"
+  LLM_MODEL: "gemini-3-flash-preview"
   LLM_PROXY: null
   LLM_BACKEND: "openai"   # "openai" | "anthropic"
 
@@ -26,7 +26,7 @@ batch_generate_config: # 根据user_profile生成environment
   envs_dir: "Outputs/environments"  # 相对于 user_simulator_agent/ 的路径
   pattern: "*.json"
   skip_existing: true # 跳过已经生成的文件
-  max_concurrency: 3  # 并行生成环境的最大并发数
+  max_concurrency: 8  # 并行生成环境的最大并发数
 
 profile_analyzer_config:
   PROMPT_TMPL: "prompts/profile_analyzer_prompt.md"
@@ -50,3 +50,12 @@ user_agent_builder_config:
 
 user_query_generator_config:
   PROMPT_TMPL: "prompts/user_query_generate_prompt.md"
+
+uquery_generate_config:         # ControlCenter/uquery_generate.py
+  tasks:                        # 多组倾向配置，每组独立调用 LLM
+    - tendency: "生活类"
+      count: 10
+    - tendency: "学习类"
+      count: 10
+  max_concurrency: 8            # 并发处理 profile 数量
+  skip_existing: true           # 跳过已生成的 user_queries.json
