@@ -99,9 +99,12 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 if str(_WORKING_SPACE) not in sys.path:
     sys.path.insert(0, str(_WORKING_SPACE))
+if str(_CONTROL_CENTER) not in sys.path:
+    sys.path.insert(0, str(_CONTROL_CENTER))
 
 from config.config_loader import load_config
 from main import run_pipeline   # ← 直接 import，不再用 subprocess
+from check_env import fix_readme, collect_disk_files
 
 _cfg = load_config()
 _batch_cfg = _cfg.get("batch_generate_config", {})
@@ -279,6 +282,7 @@ def generate_env_for_profile(
             profile_dir_name=env_name,
         )
         print(f"  [OK] {env_name} 生成成功")
+        fix_readme(profile_dir, collect_disk_files(profile_dir))
         generate_file_mappings(env_path, profile_dir)
         return True
     except Exception as e:
