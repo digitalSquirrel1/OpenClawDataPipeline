@@ -4,21 +4,33 @@ standard_format.py — 将 queries_with_skills 目录下的 JSON 文件标准化
 ==========================================================================
 流程：
   对每个原 JSON 文件中的每组 results（topic + queries + skills），生成一个独立的打包文件夹，
-  文件夹结构：
-    {profile_rel_path_stem}_{topic}/
-    ├── {原始profile文件名}.json        # 从 profile_dir 复制，保留原名
-    └── user_queries.json               # { "topic": ..., "queries": [...], "skills": [...] }
+
+  **无 env_rel_path 时**（纯 skills 模式）：
+    输出到 output_dir 下：
+      {profile_rel_path_stem}_{topic}/
+      ├── {原始profile文件名}.json
+      └── user_queries.json
+
+  **有 env_rel_path 时**（env + skills 模式）：
+    输出到 envs_dir/{env_rel_path}/ 下：
+      ├── {原始profile文件名}.json   # 覆盖已有
+      └── user_queries.json          # 覆盖已有
 
 使用方式：
   python ControlCenter/standard_format.py
 
-  # 指定输入输出目录
+  # 纯 skills 模式
   python ControlCenter/standard_format.py \
       --info-dir Outputs/queries_with_skills \
       --output-dir Outputs/standard_output
+
+  # env + skills 模式（JSON 中含 env_rel_path）
+  python ControlCenter/standard_format.py \
+      --info-dir Outputs/queries_with_skills \
+      --envs-dir Outputs/environments
 """
 
-import os, sys, json, argparse, shutil
+import os, sys, json, argparse, shutil, zipfile
 from pathlib import Path
 
 # ─── 项目路径设置 ───────────────────────────────────────────────────────────────
@@ -43,9 +55,10 @@ def _sanitize_folder_name(name: str) -> str:
 
 def process_single_json(
     json_path: Path,
-    output_dir: Path,
-    profile_dir: Path,
+    profiles_dir: Path,
     skills_dir: Path,
+    output_dir: Path | None,
+    envs_dir: Path | None,
 ) -> list[str]:
     """处理单个原 JSON 文件，返回生成的打包文件夹路径列表。"""
 
@@ -54,9 +67,21 @@ def process_single_json(
 
     profile_rel_path = data["profile_rel_path"]
     results = data["results"]
+    env_rel_path = data.get("env_rel_path")
 
     # profile_rel_path 的 stem（去掉 .json 后缀）
     profile_stem = Path(profile_rel_path).stem
+
+    # ── env_rel_path 存在时的前置校验 ──
+    if env_rel_path is not None:
+        assert envs_dir is not None, (
+            f"JSON 文件 {json_path.name} 包含 env_rel_path={env_rel_path}，"
+            f"但未提供 --envs-dir 参数"
+        )
+        assert output_dir is None, (
+            f"JSON 文件 {json_path.name} 包含 env_rel_path={env_rel_path}，"
+            f"此时不应指定 --output-dir 参数"
+        )
 
     created_folders = []
 
@@ -65,21 +90,31 @@ def process_single_json(
         skills = result_item["skills"]
         queries = result_item["queries"]
 
-        # 1. 打包文件夹名称 = profile_stem + "_" + topic
-        folder_name = _sanitize_folder_name(f"{profile_stem}_{topic}")
-        pack_dir = output_dir / folder_name
-        pack_dir.mkdir(parents=True, exist_ok=True)
+        # ── 确定输出目录 ──
+        if env_rel_path is not None:
+            # env + skills 模式：写入 envs_dir 下对应的 env 文件夹
+            pack_dir = envs_dir / env_rel_path
+            if not pack_dir.exists():
+                raise FileNotFoundError(
+                    f"env 目录不存在: {pack_dir}\n"
+                    f"  env_rel_path={env_rel_path}, envs_dir={envs_dir}"
+                )
+        else:
+            # 纯 skills 模式：在 output_dir 下创建打包文件夹
+            folder_name = _sanitize_folder_name(f"{profile_stem}_{topic}")
+            pack_dir = output_dir / folder_name
+            pack_dir.mkdir(parents=True, exist_ok=True)
 
-        # 2. 复制 profile 到文件夹下，保留原文件名
-        src_profile = profile_dir / profile_rel_path
+        # ── 复制 profile 到文件夹下，保留原文件名（已有则覆盖）──
+        src_profile = profiles_dir / profile_rel_path
         if not src_profile.exists():
             raise FileNotFoundError(
                 f"profile 文件不存在: {src_profile}\n"
-                f"  profile_rel_path={profile_rel_path}, profile_dir={profile_dir}"
+                f"  profile_rel_path={profile_rel_path}, profiles_dir={profiles_dir}"
             )
         shutil.copy2(src_profile, pack_dir / Path(profile_rel_path).name)
 
-        # 3. 收集 skills 相对路径列表，并验证存在性
+        # ── 收集 skills 相对路径列表，并验证存在性 ──
         skill_rel_paths = []
         for skill_info in skills:
             skill_rel = skill_info["skill目录"]
@@ -91,7 +126,7 @@ def process_single_json(
                 )
             skill_rel_paths.append(skill_rel.replace("\\", "/"))
 
-        # 4. 写 user_queries.json（含 skills 相对路径）
+        # ── 写 user_queries.json（含 skills 相对路径），已有则覆盖 ──
         user_queries = {
             "topic": topic,
             "queries": queries,
@@ -105,7 +140,13 @@ def process_single_json(
     return created_folders
 
 
-def run(info_dir: Path, output_dir: Path, profile_dir: Path, skills_dir: Path):
+def run(
+    info_dir: Path,
+    profiles_dir: Path,
+    skills_dir: Path,
+    output_dir: Path | None,
+    envs_dir: Path | None,
+):
     """遍历 info_dir 下所有 JSON 文件并标准化打包。"""
 
     if not info_dir.exists():
@@ -116,32 +157,59 @@ def run(info_dir: Path, output_dir: Path, profile_dir: Path, skills_dir: Path):
         print(f"[Warning] 输入目录下没有 JSON 文件: {info_dir}")
         return
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     total_folders = 0
     for json_path in json_files:
         print(f"  处理: {json_path.name}")
-        folders = process_single_json(json_path, output_dir, profile_dir, skills_dir)
+        folders = process_single_json(json_path, profiles_dir, skills_dir, output_dir, envs_dir)
         total_folders += len(folders)
         for f in folders:
             print(f"    -> {Path(f).name}")
 
     print(f"\n完成: 共处理 {len(json_files)} 个文件, 生成 {total_folders} 个打包文件夹")
-    print(f"输出目录: {output_dir}")
+
+    # ── 最终打包为 zip ──
+    if envs_dir is not None:
+        # env + skills 模式：将 envs_dir 下所有包含 user_queries.json 的子目录打入 zip
+        zip_path = envs_dir / "standard_output.zip"
+        dirs_to_pack = sorted(
+            p.parent for p in envs_dir.rglob("user_queries.json")
+        )
+        if dirs_to_pack:
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for dir_path in dirs_to_pack:
+                    for file in sorted(dir_path.rglob("*")):
+                        if file.is_file():
+                            arcname = file.relative_to(envs_dir).as_posix()
+                            zf.write(file, arcname)
+            print(f"已打包 zip: {zip_path}  ({len(dirs_to_pack)} 个环境目录)")
+        else:
+            print("[Warning] envs_dir 下未找到包含 user_queries.json 的目录，跳过打包")
+    else:
+        assert output_dir is not None, "envs_dir 和 output_dir 均为 None，无法打包"
+        # 纯 skills 模式：将整个 output_dir 打包
+        zip_path = output_dir.parent / f"{output_dir.name}.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file in sorted(output_dir.rglob("*")):
+                if file.is_file():
+                    arcname = file.relative_to(output_dir.parent).as_posix()
+                    zf.write(file, arcname)
+        print(f"已打包 zip: {zip_path}")
 
 
 def main():
     cfg = load_config()
     fmt_cfg = cfg.get("standard_format_config", {})
 
-    # 从 query_gen 配置中获取 profile_dir 和 skills_dir 的默认值
+    # 从 query_gen 配置中获取 profiles_dir 和 skills_dir 的默认值
     gen_cfg = cfg.get("query_gen_with_topic_skill_profile_config", {})
     search_cfg = cfg.get("topic_search_skills_config", {})
 
     info_dir_default = _resolve(fmt_cfg.get("info_dir"), "Outputs/queries_with_skills")
-    output_dir_default = _resolve(fmt_cfg.get("output_dir"), "Outputs/standard_output")
-    profile_dir_default = _resolve(
-        fmt_cfg.get("profile_dir") or gen_cfg.get("profile_dir"),
+    profiles_dir_default = _resolve(
+        fmt_cfg.get("profiles_dir") or gen_cfg.get("profile_dir"),
         "Outputs/profiles",
     )
     skills_dir_default = _resolve(
@@ -149,32 +217,56 @@ def main():
         "Outputs/skill_localize/skills_library",
     )
 
+    # 从 yaml 读取 output_dir / envs_dir 默认值（二者互斥，envs_dir 优先）
+    _yaml_envs_dir = fmt_cfg.get("envs_dir")
+    _yaml_output_dir = fmt_cfg.get("output_dir")
+
+    envs_dir_default: str | None = None
+    output_dir_default: str | None = None
+    if _yaml_envs_dir:
+        envs_dir_default = str(_resolve(_yaml_envs_dir, "Outputs/environments"))
+    elif _yaml_output_dir:
+        output_dir_default = str(_resolve(_yaml_output_dir, "Outputs/standard_output"))
+    else:
+        # yaml 两个都没配，给 output_dir 一个兜底默认
+        output_dir_default = str(_resolve(None, "Outputs/standard_output"))
+
     parser = argparse.ArgumentParser(description="标准化打包 queries_with_skills")
     parser.add_argument("--info-dir", default=str(info_dir_default),
                         help=f"输入目录（默认: {info_dir_default}）")
-    parser.add_argument("--output-dir", default=str(output_dir_default),
-                        help=f"输出目录（默认: {output_dir_default}）")
-    parser.add_argument("--profile-dir", default=str(profile_dir_default),
-                        help=f"用户画像目录（默认: {profile_dir_default}）")
+    parser.add_argument("--output-dir", default=output_dir_default,
+                        help=f"输出目录（纯 skills 模式，默认: {output_dir_default}）")
+    parser.add_argument("--envs-dir", default=envs_dir_default,
+                        help=f"环境目录（env+skills 模式，默认: {envs_dir_default}）")
+    parser.add_argument("--profiles-dir", default=str(profiles_dir_default),
+                        help=f"用户画像目录（默认: {profiles_dir_default}）")
     parser.add_argument("--skills-dir", default=str(skills_dir_default),
                         help=f"skills 目录（默认: {skills_dir_default}）")
     args = parser.parse_args()
 
     info_dir = Path(args.info_dir)
-    output_dir = Path(args.output_dir)
-    profile_dir = Path(args.profile_dir)
+    output_dir = Path(args.output_dir) if args.output_dir else None
+    envs_dir = Path(args.envs_dir) if args.envs_dir else None
+    profiles_dir = Path(args.profiles_dir)
     skills_dir = Path(args.skills_dir)
+
+    assert output_dir is not None or envs_dir is not None, (
+        "必须至少指定 --output-dir 或 --envs-dir 之一（或在 yaml standard_format_config 中配置）"
+    )
 
     print("=" * 60)
     print("  标准格式化打包")
     print("=" * 60)
     print(f"  输入目录:   {info_dir}")
-    print(f"  输出目录:   {output_dir}")
-    print(f"  画像目录:   {profile_dir}")
+    if output_dir is not None:
+        print(f"  输出目录:   {output_dir}")
+    if envs_dir is not None:
+        print(f"  环境目录:   {envs_dir}")
+    print(f"  画像目录:   {profiles_dir}")
     print(f"  Skills目录: {skills_dir}")
     print()
 
-    run(info_dir, output_dir, profile_dir, skills_dir)
+    run(info_dir, profiles_dir, skills_dir, output_dir, envs_dir)
 
 
 if __name__ == "__main__":
