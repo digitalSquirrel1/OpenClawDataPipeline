@@ -1,3 +1,5 @@
+# 这是个用于代码上库脱敏的文件，不能跑的。实际能跑的是baseline_using.yaml
+
 api_config:
   LLM_API_KEY: "sk-xxx"
   LLM_BASE_URL: "xxx"
