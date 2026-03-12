@@ -4,18 +4,22 @@ query_gen_with_topic_skill_profile.py — 根据 topics + skills + user_profile 
 =======================================================================================
 流程：
   1. 读取 topics.txt，提取每行中文冒号前的关键词作为 topic
-  2. 遍历 profile_dir 下的所有 profile JSON 文件
+  2. 遍历 profiles_dir 下的所有 profile JSON 文件
   3. 组装 (topic, profile) 排列组合为 task 列表，每个 task 独立查询 skills（利用随机性）
   4. 线程池并发调用 LLM 生成 query，每完成一个 task 立即追加保存到对应 profile 的输出文件
   5. 输出 JSON 含 queries、profile 相对路径、skills 相对路径、topic
 
+两种模式：
+  - envs_dir 为 null: 纯 topic + skills + profile 生成（原有逻辑）
+  - envs_dir 存在:    额外读取用户电脑文件结构摘要，使用包含本地文件信息的 prompt
+
 使用方式：
   python ControlCenter/query_gen_with_topic_skill_profile.py
 
-  # 指定 topics 文件和 profile 目录
+  # 指定 topics 文件和 profiles 目录
   python ControlCenter/query_gen_with_topic_skill_profile.py \
       --topics-txt Outputs/topics.txt \
-      --profile-dir Outputs/profiles \
+      --profiles-dir Outputs/profiles \
       --output-dir Outputs/queries_with_skills
 
   # 跳过已生成的
@@ -135,6 +139,163 @@ def _format_skills_info(skills: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _load_env_info(env_subdir: Path, env_rel_path: str) -> dict | None:
+    """从环境子目录中加载文件结构摘要（通过 README.md）。
+
+    Args:
+        env_subdir: envs_dir 下某个环境的子目录，如 envs_dir/王爱琴_物业管理员
+        env_rel_path: 相对于 envs_dir 的路径名
+
+    目录结构: env_subdir / {同名子目录} / README.md
+
+    Returns:
+        {"dir_count": int, "file_types_summary": str, "file_samples": str, "env_rel_path": str}
+        如果 README.md 不存在则返回 None。
+    """
+    env_name = env_subdir.name
+    readme_path = env_subdir / env_name / "README.md"
+    if not readme_path.exists():
+        return None
+
+    content = readme_path.read_text(encoding="utf-8")
+
+    # ── 解析目录 ────────────────────────────────────────────────────────────
+    dir_count = 0
+    dirs_section = ""
+    if "## 目录结构" in content:
+        after_dirs = content.split("## 目录结构", 1)[1]
+        # 提取 ``` 代码块内容
+        if "```" in after_dirs:
+            code_block = after_dirs.split("```", 2)
+            if len(code_block) >= 2:
+                dirs_section = code_block[1].strip()
+                dir_count = len([l for l in dirs_section.splitlines() if l.strip()])
+
+    # ── 解析文件清单 ────────────────────────────────────────────────────────
+    file_types: dict[str, int] = {}
+    file_samples_lines: list[str] = []
+    if "## 文件清单" in content:
+        after_files = content.split("## 文件清单", 1)[1]
+        # 如果后面还有 ## 章节，截断
+        next_section = after_files.find("\n## ")
+        if next_section != -1:
+            after_files = after_files[:next_section]
+
+        for line in after_files.splitlines():
+            line = line.strip()
+            if not line.startswith("- "):
+                continue
+            # 格式: - 🌐 `path` — description  或  - 📝 `path` — description
+            # 提取路径
+            backtick_start = line.find("`")
+            backtick_end = line.find("`", backtick_start + 1) if backtick_start != -1 else -1
+            if backtick_start == -1 or backtick_end == -1:
+                continue
+            file_path = line[backtick_start + 1:backtick_end]
+
+            # 提取描述（— 后面的部分）
+            desc = ""
+            dash_idx = line.find("—", backtick_end)
+            if dash_idx != -1:
+                desc = line[dash_idx + 1:].strip()
+
+            # 统计文件类型（按后缀）
+            suffix = Path(file_path).suffix.lower()
+            if suffix:
+                file_types[suffix] = file_types.get(suffix, 0) + 1
+
+            # 收集样例
+            file_samples_lines.append(f"  - {file_path}")
+            if desc:
+                file_samples_lines.append(f"    → {desc}")
+
+    # 构建 file_types_summary
+    type_summary_lines = []
+    for ext, count in sorted(file_types.items(), key=lambda x: x[1], reverse=True):
+        type_summary_lines.append(f"  - {ext}: {count}个文件")
+    file_types_summary = "\n".join(type_summary_lines) if type_summary_lines else "  无文件类型统计"
+
+    file_samples = "\n".join(file_samples_lines) if file_samples_lines else "  无文件样例"
+
+    return {
+        "dir_count": dir_count,
+        "file_types_summary": file_types_summary,
+        "file_samples": file_samples,
+        "env_rel_path": env_rel_path,
+    }
+
+
+def load_profiles_from_envs(
+    envs_dir: Path,
+    profiles_dir: Path,
+) -> list[tuple[str, dict, dict]]:
+    """从 envs_dir 遍历子目录，通过 pipeline_meta.json 找到对应的 profile 并加载环境信息。
+
+    流程:
+      1. 遍历 envs_dir 下的每个子目录
+      2. 读取子目录中的 pipeline_meta.json，提取 source_profile_path
+      3. assert source_profile_path 以 profiles_dir 开头
+      4. 加载 profile JSON
+      5. 加载该环境的 README.md 摘要
+
+    Returns:
+        [(profile_rel_path, profile_dict, env_info_dict), ...]
+
+    Raises:
+        FileNotFoundError: envs_dir 不存在
+        AssertionError: source_profile_path 不以 profiles_dir 开头
+    """
+    if not envs_dir.exists():
+        raise FileNotFoundError(f"envs_dir 不存在: {envs_dir}")
+
+    results = []
+    profiles_dir_resolved = profiles_dir.resolve()
+
+    for env_subdir in sorted(envs_dir.iterdir()):
+        if not env_subdir.is_dir():
+            continue
+
+        meta_path = env_subdir / "pipeline_meta.json"
+        if not meta_path.exists():
+            print(f"  [Warning] 未找到 pipeline_meta.json: {meta_path}")
+            continue
+
+        # 读取 pipeline_meta.json
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        source_profile_path = meta.get("source_profile_path")
+        if not source_profile_path:
+            print(f"  [Warning] pipeline_meta.json 缺少 source_profile_path: {meta_path}")
+            continue
+
+        source_profile_path = Path(source_profile_path).resolve()
+
+        # assert source_profile_path 以 profiles_dir 开头
+        assert str(source_profile_path).startswith(str(profiles_dir_resolved)), (
+            f"source_profile_path 不以 profiles_dir 开头!\n"
+            f"  source_profile_path: {source_profile_path}\n"
+            f"  profiles_dir:        {profiles_dir_resolved}"
+        )
+
+        if not source_profile_path.exists():
+            print(f"  [Warning] profile 文件不存在: {source_profile_path}")
+            continue
+
+        # 加载 profile
+        profile = json.loads(source_profile_path.read_text(encoding="utf-8"))
+        profile_rel = source_profile_path.relative_to(profiles_dir_resolved).as_posix()
+
+        # 加载环境信息
+        env_rel_path = env_subdir.name
+        env_info = _load_env_info(env_subdir, env_rel_path)
+        if env_info is None:
+            print(f"  [Warning] 未找到环境 README.md: {env_subdir / env_subdir.name / 'README.md'}")
+            continue
+
+        results.append((profile_rel, profile, env_info))
+
+    return results
+
+
 def generate_queries(
     topic: str,
     skills: list[dict],
@@ -142,8 +303,13 @@ def generate_queries(
     llm: LLMClient,
     prompt_tmpl: str,
     n: int = 5,
+    env_info: dict | None = None,
 ) -> list[str]:
     """调用 LLM 为一组 (topic, skills, profile) 生成 queries。
+
+    Args:
+        env_info: 环境信息字典（含 dir_count, file_types_summary, file_samples），
+                  为 None 时使用不含环境信息的 prompt。
 
     Returns:
         query 字符串列表
@@ -154,12 +320,19 @@ def generate_queries(
     skills_info = _format_skills_info(skills)
     profile_json = json.dumps(profile, ensure_ascii=False, indent=2)
 
-    prompt = prompt_tmpl.format(
+    fmt_kwargs = dict(
         topic=topic,
         skills_info=skills_info,
         profile_json=profile_json,
         n=n,
     )
+
+    if env_info is not None:
+        fmt_kwargs["dir_count"] = env_info["dir_count"]
+        fmt_kwargs["file_types_summary"] = env_info["file_types_summary"]
+        fmt_kwargs["file_samples"] = env_info["file_samples"]
+
+    prompt = prompt_tmpl.format(**fmt_kwargs)
 
     result = llm.generate_json(prompt)
     queries = result.get("queries", [])
@@ -173,13 +346,15 @@ def _append_record_to_file(
     profile_rel: str,
     record: dict,
     lock: threading.Lock,
+    env_rel_path: str | None = None,
 ) -> None:
     """线程安全地将一条 record 追加到 profile 的输出 JSON 文件。
 
     文件格式:
-        { "profile_rel_path": ..., "generated_at": ..., "results": [...] }
+        { "profile_rel_path": ..., "env_rel_path": ..., "generated_at": ..., "results": [...] }
 
     若文件已存在，则读取并追加到 results 列表；否则新建。
+    env_rel_path 仅在新建文件时写入顶层。
     """
     with lock:
         if out_path.exists():
@@ -190,6 +365,8 @@ def _append_record_to_file(
                 "generated_at": datetime.now().isoformat(),
                 "results": [],
             }
+            if env_rel_path is not None:
+                data["env_rel_path"] = env_rel_path
         data["results"].append(record)
         out_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2),
@@ -207,6 +384,7 @@ def _run_task(
     n_queries: int,
     out_path: Path,
     file_lock: threading.Lock,
+    env_info: dict | None = None,
 ) -> dict:
     """单个 task: 调用 LLM 生成 queries 并立即追加保存。
 
@@ -221,6 +399,7 @@ def _run_task(
             llm=llm,
             prompt_tmpl=prompt_tmpl,
             n=n_queries,
+            env_info=env_info,
         )
         record = {
             "topic": topic,
@@ -233,7 +412,10 @@ def _run_task(
             ],
             "queries": queries,
         }
-        _append_record_to_file(out_path, profile_rel, record, file_lock)
+        _append_record_to_file(
+            out_path, profile_rel, record, file_lock,
+            env_rel_path=env_info["env_rel_path"] if env_info else None,
+        )
         print(f"  [OK] topic「{topic}」× profile「{profile_rel}」→ {len(queries)} 条 query")
         return {"topic": topic, "profile_rel": profile_rel, "status": "ok", "count": len(queries)}
     except Exception as e:
@@ -257,10 +439,16 @@ def parse_args():
         help="topics.txt 路径（相对于项目根目录）",
     )
     parser.add_argument(
-        "--profile-dir",
+        "--profiles-dir",
         type=str,
-        default=gen_cfg.get("profile_dir", "Outputs/profiles"),
+        default=gen_cfg.get("profiles_dir", "Outputs/profiles"),
         help="用户 profile 所在文件夹（相对于项目根目录）",
+    )
+    parser.add_argument(
+        "--envs-dir",
+        type=str,
+        default=gen_cfg.get("envs_dir", None),
+        help="用户环境目录（相对于项目根目录），为 null 时不读取环境信息",
     )
     parser.add_argument(
         "--output-dir",
@@ -299,13 +487,20 @@ def main():
     if not topics_path.is_absolute():
         topics_path = (_PROJECT_ROOT / topics_path).resolve()
 
-    profile_dir = Path(args.profile_dir)
-    if not profile_dir.is_absolute():
-        profile_dir = (_PROJECT_ROOT / profile_dir).resolve()
+    profiles_dir = Path(args.profiles_dir)
+    if not profiles_dir.is_absolute():
+        profiles_dir = (_PROJECT_ROOT / profiles_dir).resolve()
 
     output_dir = Path(args.output_dir)
     if not output_dir.is_absolute():
         output_dir = (_PROJECT_ROOT / output_dir).resolve()
+
+    # envs_dir: None 或有效路径
+    envs_dir = None
+    if args.envs_dir:
+        envs_dir = Path(args.envs_dir)
+        if not envs_dir.is_absolute():
+            envs_dir = (_PROJECT_ROOT / envs_dir).resolve()
 
     n_queries = args.queries_per_combination
     num_user_per_topic = args.num_user_per_topic
@@ -315,10 +510,27 @@ def main():
     print(f"\n  topics 文件: {topics_path}")
     print(f"  提取到 {len(topics)} 个 topic: {topics}")
 
-    # ── 加载 profiles ───────────────────────────────────────────────────────
-    all_profiles = load_profiles(profile_dir)
-    print(f"\n  profile 目录: {profile_dir}")
-    print(f"  找到 {len(all_profiles)} 个 profile")
+    # ── 加载 profiles（根据 envs_dir 是否存在走不同分支）────────────────
+    # all_profiles: [(profile_rel, profile_dict), ...]
+    # env_info_map:  {profile_rel: env_info_dict}   （仅 envs_dir 模式有值）
+    env_info_map: dict[str, dict] = {}
+
+    if envs_dir:
+        # envs_dir 模式: 从环境目录的 pipeline_meta.json 反查 profile
+        env_entries = load_profiles_from_envs(envs_dir, profiles_dir)
+        all_profiles = [(rel, prof) for rel, prof, _ in env_entries]
+        for rel, _, einfo in env_entries:
+            env_info_map[rel] = einfo
+        print(f"\n  envs_dir: {envs_dir}（从 pipeline_meta.json 加载 profile）")
+        print(f"  profiles_dir: {profiles_dir}（用于校验 source_profile_path）")
+        print(f"  找到 {len(all_profiles)} 个 profile（含环境信息）")
+    else:
+        # 纯模式: 直接从 profiles_dir 加载
+        all_profiles = load_profiles(profiles_dir)
+        print(f"\n  profiles 目录: {profiles_dir}")
+        print(f"  找到 {len(all_profiles)} 个 profile")
+        print(f"  envs_dir: 未配置（纯 topic+skills+profile 模式）")
+
     if num_user_per_topic is not None:
         print(f"  每个 topic 随机选取 {num_user_per_topic} 个 profile")
     print()
@@ -330,7 +542,18 @@ def main():
     # ── 加载 prompt 模板 ────────────────────────────────────────────────────
     cfg     = load_config()
     gen_cfg = cfg.get("query_gen_with_topic_skill_profile_config", {})
-    prompt_rel = gen_cfg.get("PROMPT_TMPL", "prompts/query_gen_with_topic_skill_profile_prompt.md")
+
+    # 根据 envs_dir 是否存在选择不同的 prompt
+    if envs_dir:
+        prompt_rel = gen_cfg.get(
+            "PROMPT_TMPL_ENV",
+            "prompts/query_gen_with_topic_skill_profile_env_prompt.md",
+        )
+    else:
+        prompt_rel = gen_cfg.get(
+            "PROMPT_TMPL",
+            "prompts/query_gen_with_topic_skill_profile_prompt.md",
+        )
     prompt_tmpl = get_prompt(prompt_rel)
 
     # ── 初始化 LLM ──────────────────────────────────────────────────────────
@@ -372,6 +595,9 @@ def main():
                 except Exception:
                     pass
 
+            # 获取 env_info（envs_dir 模式下 env_info_map 中一定有值）
+            env_info = env_info_map.get(profile_rel)
+
             # 为此 task 实时查询 skills（每次调用有随机性）
             skills = search_skills_by_topic(topic)
             if not skills:
@@ -388,6 +614,7 @@ def main():
                 "profile": profile,
                 "out_path": out_path,
                 "file_lock": file_locks[out_path_str],
+                "env_info": env_info,
             })
 
     print(f"  共组装 {len(tasks)} 个 task（topic × profile 排列组合）\n")
@@ -412,6 +639,7 @@ def main():
                 n_queries=n_queries,
                 out_path=t["out_path"],
                 file_lock=t["file_lock"],
+                env_info=t["env_info"],
             ): t
             for t in tasks
         }
@@ -426,6 +654,10 @@ def main():
     print("\n" + "=" * 60)
     print(f"  LLM 调用: 成功 {total_success}  失败 {total_fail}")
     print(f"  共 {len(tasks)} 个 task")
+    if envs_dir:
+        print(f"  模式: envs_dir（含用户电脑文件结构摘要）")
+    else:
+        print(f"  模式: 纯 topic+skills+profile")
     print("=" * 60)
     return 0 if total_fail == 0 else 1
 
