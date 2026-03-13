@@ -1,0 +1,289 @@
+[
+  {
+    "skill名称": "arc-security-mcp",
+    "skill目录": "ai-and-llms\\trypto1019__arc-security-mcp",
+    "skill简介": "专用于 AI Agent 生态（如 ClawHub）的安全情报工具，提供技能安全性审计、恶意代码扫描、意图分析及威胁情报查询，用于识别插件中的安全风险。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "个性化资讯",
+      "学术调研"
+    ]
+  },
+  {
+    "skill名称": "mlx-tts",
+    "skill目录": "apple-apps-and-services\\guoqiao__mlx-tts",
+    "skill简介": "专用于 macOS (Apple Silicon) 设备的本地文本转语音工具，利用 MLX 框架和 QWen3-TTS 模型将文本转换为音频文件，支持生成语音消息回复，无需 API 密钥或服务器。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "娱乐与休闲"
+    ]
+  },
+  {
+    "skill名称": "appstore-rating-pulse",
+    "skill目录": "browser-and-automation\\aligurelli__appstore-rating-pulse",
+    "skill简介": "专用于监控 iOS 应用在不同国家/地区的 App Store 评分。通过调用 Apple 的 iTunes Lookup API，自动获取并汇总指定应用的实时评分数据，支持定时推送报告或即时查询。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "个性化资讯",
+      "产品对比"
+    ]
+  },
+  {
+    "skill名称": "apple-calendar",
+    "skill目录": "calendar-and-scheduling\\tyler6204__apple-calendar",
+    "skill简介": "专用于 macOS 系统的 Apple Calendar（日历）应用集成工具，支持对日历事件进行增删改查、搜索以及多日历管理，可处理日程摘要、起止时间、地点及重复周期等信息。",
+    "skill账号依赖": "需要 macOS 系统权限及 Apple ID 登录的日历账户",
+    "skill可用场景": [
+      "日程管理"
+    ]
+  },
+  {
+    "skill名称": "bluebubbles",
+    "skill目录": "clawdbot-tools\\kevin19830331__bluebubbles",
+    "skill简介": "专用于 BlueBubbles 插件，通过对接 BlueBubbles 服务器实现 iMessage 消息的发送、接收、附件处理、已读回执及表情回应（Tapbacks）等即时通讯功能。",
+    "skill账号依赖": "需要 BlueBubbles 服务器地址（serverUrl）及访问密码（password）",
+    "skill可用场景": [
+      "社区互动"
+    ]
+  },
+  {
+    "skill名称": "gekko-strategist",
+    "skill目录": "cli-utilities\\gekkoai001__gekko-strategist",
+    "skill简介": "专用于 DeFi 领域的 AI 策略开发工具，支持在 Base 网络上设计、回测、调整和评估流动性挖矿（Yield Farming）策略，提供风险分析与资金分配建议。",
+    "skill账号依赖": "需要访问 Base 网络 RPC 及历史数据权限",
+    "skill可用场景": [
+      "股市操作"
+    ]
+  },
+  {
+    "skill名称": "ai-collab",
+    "skill目录": "coding-agents-and-ides\\jeremysommerfeld8910-cpu__ai-collab",
+    "skill简介": "专用于 OpenClaw 的多智能体协作系统，支持两个智能体（如 Claude 和 GPT）通过共享日志和收件箱协议并行工作。具备任务分配、状态监控、财务授权门控及 Telegram 远程控制功能，适用于多模型协同研究、自动化交易辅助及复杂后台任务处理。",
+    "skill账号依赖": "需要 Anthropic 或 OpenAI 的 API 密钥；若启用 Telegram 桥接，需提供 Telegram Bot Token、Group ID 及 User ID。",
+    "skill可用场景": [
+      "股市操作",
+      "智能控制",
+      "学术调研"
+    ]
+  },
+  {
+    "skill名称": "claw-club",
+    "skill目录": "communication\\epwhesq__claw-club",
+    "skill简介": "专用于“The Claw Club”社交网络的AI机器人交互工具，支持机器人在该平台进行注册、发布动态、回复帖子、获取信息流及参与社区互动。",
+    "skill账号依赖": "需要 The Claw Club 平台的 API Key（可通过内置注册脚本获取）",
+    "skill可用场景": [
+      "社区互动",
+      "娱乐与休闲"
+    ]
+  },
+  {
+    "skill名称": "duckdb-en",
+    "skill目录": "data-and-analytics\\camelsprout__duckdb-cli-ai-skills",
+    "skill简介": "专用于 DuckDB 命令行界面的 SQL 分析、数据处理和文件转换工具。支持对 CSV、Parquet、JSON 等格式进行高效 SQL 查询、统计分析及数据格式互转。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "实验数据处理与绘图"
+    ]
+  },
+  {
+    "skill名称": "claude-tmux-runner",
+    "skill目录": "devops-and-cloud\\xaiohuangningde__claude-tmux-runner",
+    "skill简介": "专用于 Claude Code 的并行任务管理工具，利用 tmux 后台并发执行并监控多个编程任务（如模块编写、组件构建等），支持非阻塞的任务管理、状态跟踪与后台作业控制。",
+    "skill账号依赖": "需要安装并配置 Claude Code 命令行工具及 tmux 环境",
+    "skill可用场景": []
+  },
+  {
+    "skill名称": "android-3d-development",
+    "skill目录": "gaming\\tippyentertainment__android-3d-developer",
+    "skill简介": "专用于Android平台的3D游戏与交互体验开发，支持Unity、Unreal、OpenGL及Vulkan等引擎，涵盖性能优化、渲染资源管理、输入适配及应用商店发布等技术指导。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "娱乐与休闲"
+    ]
+  },
+  {
+    "skill名称": "session-wrap-up",
+    "skill目录": "git-and-github\\xbillwatsonx__alex-session-wrap-up",
+    "skill简介": "该技能用于自动化处理工作会话结束时的收尾工作，包括自动提交Git代码、从对话中提取关键决策与教训、利用AI识别重复模式，并更新本地记忆或规则文件（如MEMORY.md），实现知识的结构化沉淀与流程优化。",
+    "skill账号依赖": "Git仓库访问权限、OpenRouter或OpenAI API密钥",
+    "skill可用场景": [
+      "知识点梳理与思维导图"
+    ]
+  },
+  {
+    "skill名称": "calorie-counter",
+    "skill目录": "health-and-fitness\\cnqso__calorie-counter",
+    "skill简介": "一个用于追踪每日卡路里和蛋白质摄入、设定饮食目标以及记录体重的健康管理工具，支持通过命令行记录食物信息、查看历史趋势和管理体重数据。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "健康管理"
+    ]
+  },
+  {
+    "skill名称": "comfyui-request",
+    "skill目录": "image-and-video-generation\\xtopher86__comfyui-request",
+    "skill简介": "专用于向运行中的 ComfyUI 实例发送 JSON 工作流请求，并获取生成的图像 URL 或 base64 数据，实现 AI 图像生成与处理功能。",
+    "skill账号依赖": "需要 ComfyUI 服务器的访问地址（Host/Port），如设置了基础认证则需用户名和密码。",
+    "skill可用场景": [
+      "娱乐与休闲",
+      "批图剪辑"
+    ]
+  },
+  {
+    "skill名称": "V2RayN Skill",
+    "skill目录": "ios-and-macos-development\\qiangwang375-wq__v2rayn",
+    "skill简介": "专用于 macOS 系统的 V2RayN 代理客户端管理工具，提供节点状态监控、自动故障切换、连接测试及订阅管理等维护功能。",
+    "skill账号依赖": "需要安装 V2RayN 客户端并配置有效的代理节点订阅",
+    "skill可用场景": []
+  },
+  {
+    "skill名称": "Marketing Strategy & PMM (产品营销与市场策略)",
+    "skill目录": "marketing-and-sales\\alirezarezvani__marketing-strategy-pmm",
+    "skill简介": "专注于产品营销（PMM）的策略工具，涵盖市场定位、进入市场（GTM）策略、竞争情报分析及产品发布规划。支持定义理想客户画像（ICP）、编写竞争对比话术（Battlecards）及制定国际市场扩张计划。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "产品对比",
+      "知识点梳理与思维导图"
+    ]
+  },
+  {
+    "skill名称": "feishu-voice-assistant",
+    "skill目录": "media-and-streaming\\autogame-17__feishu-voice-assistant",
+    "skill简介": "专用于“飞书”平台的语音助手，利用 Duby AI 将文本转换为语音，并以原生语音消息的形式发送至指定的飞书用户或群聊。",
+    "skill账号依赖": "需要 Duby API Key 和飞书（Feishu）应用凭证（App ID、App Secret）。",
+    "skill可用场景": [
+      "社区互动"
+    ]
+  },
+  {
+    "skill名称": "Moltlang",
+    "skill目录": "moltbook\\eduarddriessen1__moltlang",
+    "skill简介": "一种专为AI与AI之间高效通信设计的紧凑型符号语言，通过特定的符号（如∿、◊、⧫）和语法结构实现比自然语言更简洁、精准的信息交换，旨在优化AI代理间的沟通效率与表达精度。",
+    "skill账号依赖": "",
+    "skill可用场景": []
+  },
+  {
+    "skill名称": "PublishGuard — Post Verification & Platform Credential Manager",
+    "skill目录": "notes-and-pkm\\edmonddantesj__publish-guard",
+    "skill简介": "专用于在 BotMadang、Moltbook、ClawHub 等社区平台发布内容时进行发布验证、凭据管理及合规性检查，防止虚假发布报告并确保内容符合平台特定要求。",
+    "skill账号依赖": "需要对应发布平台（如 BotMadang, Moltbook, ClawHub）的账号凭据（API Token 或 登录信息）",
+    "skill可用场景": [
+      "社区互动"
+    ]
+  },
+  {
+    "skill名称": "Book Cover Generation",
+    "skill目录": "pdf-and-documents\\eftalyurtseven__book-cover-generation",
+    "skill简介": "专用于通过 each::sense API 生成专业书籍封面、电子书封面及有声读物封面，支持多种文学流派风格定制、系列书籍视觉一致性维护及排版空间规划。",
+    "skill账号依赖": "需要 each::sense API Key (EACHLABS_API_KEY)",
+    "skill可用场景": [
+      "批图剪辑",
+      "娱乐与休闲"
+    ]
+  },
+  {
+    "skill名称": "memepickup-wingman",
+    "skill目录": "personal-development\\samcraw1__memepickup-wingman",
+    "skill简介": "专用于 Hinge、Tinder、Bumble 和 Instagram 的约会助手，提供开场白生成、对话回复建议、个人资料分析、约会计划及自动点赞/划动功能。",
+    "skill账号依赖": "MEMEPICKUP_API_KEY，以及对应的社交/约会平台账号（如 Hinge, Tinder, Bumble, Instagram）。",
+    "skill可用场景": [
+      "社区互动"
+    ]
+  },
+  {
+    "skill名称": "task-orchestra",
+    "skill目录": "productivity-and-tasks\\tobisamaa__task-orchestra",
+    "skill简介": "该技能用于协调多个智能体执行复杂工作流，支持任务分解、并行处理、依赖管理及子智能体调度。它能自动化管理从调研、数据分析到报告撰写的全过程，适用于科研、内容创作和软件开发等大型项目编排。",
+    "skill账号依赖": "需要 BRAVE_API_KEY 环境变量",
+    "skill可用场景": [
+      "实验数据处理与绘图",
+      "学术调研",
+      "文献写作"
+    ]
+  },
+  {
+    "skill名称": "caesar-research",
+    "skill目录": "search-and-research\\alexrudloff__caesar-research",
+    "skill简介": "专用于 Caesar 平台的深度调研工具，支持多源搜索、带引用的内容合成、后续追问及头脑风暴，可用于复杂问题的深度分析与资料汇总。",
+    "skill账号依赖": "需要 Caesar API Key (CAESAR_API_KEY)",
+    "skill可用场景": [
+      "学术调研",
+      "文献写作",
+      "知识点梳理与思维导图"
+    ]
+  },
+  {
+    "skill名称": "SaySigned",
+    "skill目录": "security-and-passwords\\klsv__saysigned",
+    "skill简介": "SaySigned是专用于AI Agent的电子签名工具，支持通过MCP或REST API以邮件或API方式发送、签署及验证具有法律效力的合同，并提供模板管理和审计追踪功能。",
+    "skill账号依赖": "需要注册SaySigned账号以获取API Key（ss_live_开头）；使用付费功能需通过Stripe完成支付设置。",
+    "skill可用场景": [
+      "邮件操作（发邮件）"
+    ]
+  },
+  {
+    "skill名称": "unifi",
+    "skill目录": "self-hosted-and-automation\\jmagar__unifi",
+    "skill简介": "专用于 UniFi 网络设备的监控与查询，支持通过本地网关 API 查看设备状态、在线客户端、网络健康度、流量分析（DPI）及系统警报。",
+    "skill账号依赖": "需要 UniFi OS 本地管理员账号（用户名、密码）及网关访问地址（URL）",
+    "skill可用场景": [
+      "智能控制"
+    ]
+  },
+  {
+    "skill名称": "food-order",
+    "skill目录": "shopping-and-e-commerce\\steipete__food-order",
+    "skill简介": "专用于 Foodora 平台的订餐管理工具，支持通过 ordercli 命令行查询历史订单、预览并重新下单以及实时追踪外卖配送状态。",
+    "skill账号依赖": "需要 Foodora 平台账号（邮箱及密码）或有效的浏览器 Session 信息。",
+    "skill可用场景": [
+      "购物",
+      "缴费与生活服务"
+    ]
+  },
+  {
+    "skill名称": "crabnet",
+    "skill目录": "smart-home-and-iot\\spclaudehome__crabnet",
+    "skill简介": "CrabNet 是一个专用于智能体（Agent）间协作的注册表和任务交换协议。它允许智能体在 Moltbook 平台上注册能力、搜索合作伙伴并发布或领取任务，涵盖安全审计、代码开发、数据处理、内容创作、学术调研、交易分析及自动化等多种任务的跨智能体交换与协作。",
+    "skill账号依赖": "需要 Moltbook 账号进行身份验证以获取 API Key",
+    "skill可用场景": [
+      "个性化资讯",
+      "股市操作",
+      "社区互动",
+      "实验数据处理与绘图",
+      "学术调研",
+      "文献写作"
+    ]
+  },
+  {
+    "skill名称": "elevenlabs-voices",
+    "skill目录": "speech-and-transcription\\robbyczgw-cla__elevenlabs-voices",
+    "skill简介": "基于 ElevenLabs API 的高质量语音合成工具，支持 32 种语言、18 种人声角色及 AI 音效生成，可用于语音播报、有声书制作、视频配音及自定义人声设计。",
+    "skill账号依赖": "需要 ElevenLabs API Key",
+    "skill可用场景": [
+      "娱乐与休闲",
+      "批图剪辑",
+      "课程视频学习辅助"
+    ]
+  },
+  {
+    "skill名称": "aviation-weather",
+    "skill目录": "transportation\\dimitryvin__aviation-weather",
+    "skill简介": "专用于从 aviationweather.gov 获取实时航空气象数据（METAR、TAF、PIREPs），支持通过 ICAO 代码查询机场天气、飞行类别及气象简报，辅助飞行规划。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "出行规划"
+    ]
+  },
+  {
+    "skill名称": "Core Refinery",
+    "skill目录": "web-and-frontend-development\\leegitw__core-refinery",
+    "skill简介": "该技能专门用于从三个或更多来源中提取并合成核心观点。通过识别在多个独立来源中重复出现的原则（N≥3），剔除噪声，帮助用户提炼出最本质、最核心的知识体系，适用于多文档的深度分析与知识整合。",
+    "skill账号依赖": "",
+    "skill可用场景": [
+      "知识点梳理与思维导图",
+      "课程视频学习辅助",
+      "学术调研",
+      "文献写作"
+    ]
+  }
+]

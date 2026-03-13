@@ -3,6 +3,7 @@
 __pycache__/
 # data
 Outputs/*
+Examples/skills_library/*
 WorkingSpace/output/*
 tests/dl_output/*
 # logs

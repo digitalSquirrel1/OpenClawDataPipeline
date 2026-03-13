@@ -64,10 +64,9 @@ def search_skills_by_topic(
         max_skills = _MAX_SKILLS
 
     if not _INDEX_PATH.exists():
-        raise FileNotFoundError(
-            f"倒排索引文件不存在: {_INDEX_PATH}\n"
-            f"请先运行 python shared/skills_topic_to_index.py 构建索引"
-        )
+        print(f"[Info] 倒排索引文件不存在: {_INDEX_PATH}，自动构建...")
+        from shared.skills_topic_to_index import build_index
+        build_index(_skills_json_path)
 
     with open(_INDEX_PATH, encoding="utf-8") as f:
         index = json.loads(f.read())
