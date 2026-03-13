@@ -217,6 +217,8 @@ Outputs/environments/
 
 **跳过逻辑：** 默认情况下，若 `{env_name}.zip` 已存在则跳过该画像。若 zip 不存在但目录存在，视为上次未完成，自动清理后重新生成。
 
+**控制文件数量**：如果需要控制生成文件的数量，需要首先在`computer_spec_file_counts.md`中修改提示词要求设计的最大文件数量；然后在`computer_spec_designer.py`中修改`categories`变量获取的默认值。
+
 **退出码：** 全部成功 `0`，有失败 `1`。
 
 ---
