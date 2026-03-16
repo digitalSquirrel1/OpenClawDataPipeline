@@ -388,6 +388,7 @@ def _run_task(
     out_path: Path,
     file_lock: threading.Lock,
     env_info: dict | None = None,
+    system_type: str | None = None,
 ) -> dict:
     """单个 task: 调用 LLM 生成 queries 并立即追加保存。
 
@@ -406,6 +407,7 @@ def _run_task(
         )
         record = {
             "topic": topic,
+            "system_type": system_type,
             "skills": [
                 {
                     "skill名称": s.get("skill名称", ""),
@@ -624,22 +626,31 @@ def main():
             # 获取 env_info（envs_dir 模式下 env_info_map 中一定有值）
             env_info = env_info_map.get(profile_rel)
 
-            # 为此 task 选择 prompt 模板
+            # 为此 task 选择 prompt 模板，并记录 system_type
             if envs_dir and env_info is not None:
                 env_subdir = envs_dir / env_info["env_rel_path"]
                 has_win_map = (env_subdir / "MAP_Windows.json").exists()
                 has_linux_map = (env_subdir / "MAP_Linux.json").exists()
                 if has_win_map and not has_linux_map:
                     task_prompt = prompt_tmpl_win
+                    system_type = "windows"
                 elif has_linux_map and not has_win_map:
                     task_prompt = prompt_tmpl_linux
+                    system_type = "linux"
                 elif has_win_map and has_linux_map:
-                    task_prompt = prompt_tmpl_win if random.random() < win_map_ratio else prompt_tmpl_linux
+                    if random.random() < win_map_ratio:
+                        task_prompt = prompt_tmpl_win
+                        system_type = "windows"
+                    else:
+                        task_prompt = prompt_tmpl_linux
+                        system_type = "linux"
                 else:
                     # 两个都不存在，回退到 Windows prompt
                     task_prompt = prompt_tmpl_win
+                    system_type = "windows"
             else:
                 task_prompt = prompt_tmpl
+                system_type = None
 
             # 为此 task 实时查询 skills（每次调用有随机性）
             skills = search_skills_by_topic(topic)
@@ -659,6 +670,7 @@ def main():
                 "file_lock": file_locks[out_path_str],
                 "env_info": env_info,
                 "prompt_tmpl": task_prompt,
+                "system_type": system_type,
             })
 
     print(f"  共组装 {len(tasks)} 个 task（topic × profile 排列组合）\n")
@@ -684,6 +696,7 @@ def main():
                 out_path=t["out_path"],
                 file_lock=t["file_lock"],
                 env_info=t["env_info"],
+                system_type=t["system_type"],
             ): t
             for t in tasks
         }

@@ -109,6 +109,7 @@ def process_single_json(
             topic = result_item["topic"]
             skills = result_item["skills"]
             queries = result_item["queries"]
+            system_type = result_item.get("system_type")
 
             skill_rel_paths = []
             for skill_info in skills:
@@ -123,6 +124,7 @@ def process_single_json(
 
             all_queries.append({
                 "topic": topic,
+                "system_type": system_type,
                 "queries": queries,
                 "skills": skill_rel_paths,
             })
@@ -143,6 +145,7 @@ def process_single_json(
             topic = result_item["topic"]
             skills = result_item["skills"]
             queries = result_item["queries"]
+            system_type = result_item.get("system_type")
 
             folder_name = _sanitize_folder_name(f"{profile_stem}_{topic}")
             pack_dir = output_dir / folder_name
@@ -169,6 +172,7 @@ def process_single_json(
 
             user_queries = [{
                 "topic": topic,
+                "system_type": system_type,
                 "queries": queries,
                 "skills": skill_rel_paths,
             }]
