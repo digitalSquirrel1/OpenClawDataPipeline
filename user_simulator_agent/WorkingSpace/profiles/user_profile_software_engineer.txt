@@ -1,0 +1,9 @@
+姓名: 张工程师
+职业: 软件工程师
+部门: 产品研发中心
+专业方向: 后端开发、系统架构
+工作内容: 代码开发、系统设计、技术文档、团队协作
+常用软件: Visual Studio Code, Docker, Git, PostgreSQL, Redis
+技术栈: Python, Go, Kubernetes, 微服务架构
+项目管理: Scrum敏捷开发、CI/CD流水线
+文档需求: API文档、技术规范、设计文档

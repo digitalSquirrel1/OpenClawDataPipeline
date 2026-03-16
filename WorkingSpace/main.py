@@ -189,8 +189,14 @@ def run_pipeline(
 
     # ── Step 4：生成 user_queries.json ──────────────────────────────────────
     _banner("Step 4 / 4  生成 user_queries.json")
+    query_cfg      = cfg.get("user_query_generator_config", {})
     generator      = UserQueryGenerator(llm)
-    queries_result = generator.generate(profile, spec)
+    queries_result = generator.generate(
+        profile,
+        spec,
+        scenario=query_cfg.get("scenario"),
+        seeds=query_cfg.get("seeds"),
+    )
     if queries_result.get("error"):
         raise RuntimeError(f"UserQueryGenerator 失败: {queries_result['error']}")
     queries_path = out_dir / "user_queries.json"
