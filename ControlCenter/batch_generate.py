@@ -10,7 +10,7 @@
   python batch_generate.py --profiles-dir Outputs/profiles
 """
 
-import os, sys, json, argparse, io, threading, contextvars
+import os, sys, json, argparse, io, threading, contextvars, random
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -228,16 +228,18 @@ def generate_file_mappings(env_path: Path, profile_dir: Path):
             linux_src = path
         linux_mapping[path] = linux_src
 
-    # 保存映射文件到 env_path 层
-    windows_map_path = env_path / "MAP_Windows.json"
-    with open(windows_map_path, "w", encoding="utf-8") as f:
-        json.dump(windows_mapping, f, ensure_ascii=False, indent=2)
-    print(f"    → MAP_Windows.json 已生成 ({len(windows_mapping)} 条)")
-
-    linux_map_path = env_path / "MAP_Linux.json"
-    with open(linux_map_path, "w", encoding="utf-8") as f:
-        json.dump(linux_mapping, f, ensure_ascii=False, indent=2)
-    print(f"    → MAP_Linux.json 已生成 ({len(linux_mapping)} 条)")
+    # 根据 WINDOWS_MAP_RATIO 概率只输出一个映射文件
+    win_ratio = float(_batch_cfg.get("WINDOWS_MAP_RATIO", 0.7))
+    if random.random() < win_ratio:
+        map_path = env_path / "MAP_Windows.json"
+        with open(map_path, "w", encoding="utf-8") as f:
+            json.dump(windows_mapping, f, ensure_ascii=False, indent=2)
+        print(f"    → MAP_Windows.json 已生成 ({len(windows_mapping)} 条)")
+    else:
+        map_path = env_path / "MAP_Linux.json"
+        with open(map_path, "w", encoding="utf-8") as f:
+            json.dump(linux_mapping, f, ensure_ascii=False, indent=2)
+        print(f"    → MAP_Linux.json 已生成 ({len(linux_mapping)} 条)")
 
 
 def generate_env_for_profile(
@@ -255,7 +257,7 @@ def generate_env_for_profile(
     if not info:
         return False
 
-    env_name    = f"{info['name']}_{info['role']}"
+    env_name    = profile_path.stem
     env_path    = envs_dir / env_name
     profile_dir = env_path / env_name   # Steps 1-3 生成的文件系统目录
     done_flag   = env_path / "task_done.txt"

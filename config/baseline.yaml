@@ -25,6 +25,7 @@ generate_user_profile_config: # 生成user profile
 batch_generate_config: # 根据user_profile生成environment
   profiles_dir: "Outputs/profiles"  # null → defaults to Outputs/profiles/
   envs_dir: "Outputs/environments"  # 相对于 user_simulator_agent/ 的路径
+  WINDOWS_MAP_RATIO: 0.7  # 生成 MAP_Windows.json 的概率，1-此值 为生成 MAP_Linux.json 的概率
   # overwrite_existing: true # 重新生成并覆盖已经生成的文件，注释掉是False，只要打开都是True
 
 profile_analyzer_config:
@@ -69,6 +70,7 @@ query_gen_with_topic_skill_profile_config:
   skip_existing: true                          # 跳过已生成的 profile 结果
   PROMPT_TMPL: "prompts/query_gen_with_topic_skill_profile_prompt.md"
   PROMPT_TMPL_ENV: "prompts/query_gen_with_topic_skill_profile_env_prompt.md"
+  PROMPT_TMPL_ENV_LINUX: "prompts/query_gen_with_topic_skill_profile_env_linux_prompt.md"
 
 topic_search_skills_config:
   skills_json_path: "Examples/skills.json"                    # skills.json 路径（相对于项目根目录）

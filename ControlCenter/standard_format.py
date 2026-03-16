@@ -167,11 +167,11 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel.replace("\\", "/"))
 
-            user_queries = {
+            user_queries = [{
                 "topic": topic,
                 "queries": queries,
                 "skills": skill_rel_paths,
-            }
+            }]
             with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
                 json.dump(user_queries, f, ensure_ascii=False, indent=2)
 

@@ -556,18 +556,31 @@ def main():
     cfg     = load_config()
     gen_cfg = cfg.get("query_gen_with_topic_skill_profile_config", {})
 
-    # 根据 envs_dir 是否存在选择不同的 prompt
     if envs_dir:
-        prompt_rel = gen_cfg.get(
+        # 加载 Windows 和 Linux 两个 env prompt，后续按 MAP 文件选择
+        prompt_rel_win = gen_cfg.get(
             "PROMPT_TMPL_ENV",
             "prompts/query_gen_with_topic_skill_profile_env_prompt.md",
         )
+        prompt_rel_linux = gen_cfg.get(
+            "PROMPT_TMPL_ENV_LINUX",
+            "prompts/query_gen_with_topic_skill_profile_env_linux_prompt.md",
+        )
+        prompt_tmpl_win = get_prompt(prompt_rel_win)
+        prompt_tmpl_linux = get_prompt(prompt_rel_linux)
+        # 读取 WINDOWS_MAP_RATIO（用于两个 MAP 都存在时的概率选择）
+        batch_cfg = cfg.get("batch_generate_config", {})
+        win_map_ratio = float(batch_cfg.get("WINDOWS_MAP_RATIO", 0.7))
+        prompt_tmpl = None  # 不再统一使用，后面按 task 选择
     else:
         prompt_rel = gen_cfg.get(
             "PROMPT_TMPL",
             "prompts/query_gen_with_topic_skill_profile_prompt.md",
         )
-    prompt_tmpl = get_prompt(prompt_rel)
+        prompt_tmpl = get_prompt(prompt_rel)
+        prompt_tmpl_win = None
+        prompt_tmpl_linux = None
+        win_map_ratio = 0.7
 
     # ── 初始化 LLM ──────────────────────────────────────────────────────────
     llm = _init_llm()
@@ -611,6 +624,23 @@ def main():
             # 获取 env_info（envs_dir 模式下 env_info_map 中一定有值）
             env_info = env_info_map.get(profile_rel)
 
+            # 为此 task 选择 prompt 模板
+            if envs_dir and env_info is not None:
+                env_subdir = envs_dir / env_info["env_rel_path"]
+                has_win_map = (env_subdir / "MAP_Windows.json").exists()
+                has_linux_map = (env_subdir / "MAP_Linux.json").exists()
+                if has_win_map and not has_linux_map:
+                    task_prompt = prompt_tmpl_win
+                elif has_linux_map and not has_win_map:
+                    task_prompt = prompt_tmpl_linux
+                elif has_win_map and has_linux_map:
+                    task_prompt = prompt_tmpl_win if random.random() < win_map_ratio else prompt_tmpl_linux
+                else:
+                    # 两个都不存在，回退到 Windows prompt
+                    task_prompt = prompt_tmpl_win
+            else:
+                task_prompt = prompt_tmpl
+
             # 为此 task 实时查询 skills（每次调用有随机性）
             skills = search_skills_by_topic(topic)
             if not skills:
@@ -628,6 +658,7 @@ def main():
                 "out_path": out_path,
                 "file_lock": file_locks[out_path_str],
                 "env_info": env_info,
+                "prompt_tmpl": task_prompt,
             })
 
     print(f"  共组装 {len(tasks)} 个 task（topic × profile 排列组合）\n")
@@ -648,7 +679,7 @@ def main():
                 profile_rel=t["profile_rel"],
                 profile=t["profile"],
                 llm=llm,
-                prompt_tmpl=prompt_tmpl,
+                prompt_tmpl=t["prompt_tmpl"],
                 n_queries=n_queries,
                 out_path=t["out_path"],
                 file_lock=t["file_lock"],
