@@ -14,7 +14,7 @@ standard_format.py — 将 queries_with_skills 目录下的 JSON 文件标准化
   **有 env_rel_path 时**（env + skills 模式）：
     输出到 envs_dir/{env_rel_path}/ 下：
       ├── {原始profile文件名}.json   # 覆盖已有
-      └── user_queries.json          # 覆盖已有
+      └── user_queries.json          # list[dict]，包含所有 topic 的结果
 
 使用方式：
   python ControlCenter/standard_format.py
@@ -85,27 +85,16 @@ def process_single_json(
 
     created_folders = []
 
-    for result_item in results:
-        topic = result_item["topic"]
-        skills = result_item["skills"]
-        queries = result_item["queries"]
+    # ── env + skills 模式：收集所有 topic 结果，一次性写入 ──
+    if env_rel_path is not None:
+        pack_dir = envs_dir / env_rel_path
+        if not pack_dir.exists():
+            raise FileNotFoundError(
+                f"env 目录不存在: {pack_dir}\n"
+                f"  env_rel_path={env_rel_path}, envs_dir={envs_dir}"
+            )
 
-        # ── 确定输出目录 ──
-        if env_rel_path is not None:
-            # env + skills 模式：写入 envs_dir 下对应的 env 文件夹
-            pack_dir = envs_dir / env_rel_path
-            if not pack_dir.exists():
-                raise FileNotFoundError(
-                    f"env 目录不存在: {pack_dir}\n"
-                    f"  env_rel_path={env_rel_path}, envs_dir={envs_dir}"
-                )
-        else:
-            # 纯 skills 模式：在 output_dir 下创建打包文件夹
-            folder_name = _sanitize_folder_name(f"{profile_stem}_{topic}")
-            pack_dir = output_dir / folder_name
-            pack_dir.mkdir(parents=True, exist_ok=True)
-
-        # ── 复制 profile 到文件夹下，保留原文件名（已有则覆盖）──
+        # 复制 profile
         src_profile = profiles_dir / profile_rel_path
         if not src_profile.exists():
             raise FileNotFoundError(
@@ -114,30 +103,89 @@ def process_single_json(
             )
         shutil.copy2(src_profile, pack_dir / Path(profile_rel_path).name)
 
-        # ── 收集 skills 相对路径列表，并验证存在性 ──
-        skill_rel_paths = []
-        for skill_info in skills:
-            skill_rel = skill_info["skill目录"]
-            src_skill = skills_dir / skill_rel
-            if not src_skill.exists():
-                raise FileNotFoundError(
-                    f"skill 目录不存在: {src_skill}\n"
-                    f"  skill目录={skill_rel}, skills_dir={skills_dir}"
-                )
-            skill_rel_paths.append(skill_rel.replace("\\", "/"))
+        # 遍历 results，收集为 list
+        all_queries = []
+        for result_item in results:
+            topic = result_item["topic"]
+            skills = result_item["skills"]
+            queries = result_item["queries"]
 
-        # ── 写 user_queries.json（含 skills 相对路径），已有则覆盖 ──
-        user_queries = {
-            "topic": topic,
-            "queries": queries,
-            "skills": skill_rel_paths,
-        }
+            skill_rel_paths = []
+            for skill_info in skills:
+                skill_rel = skill_info["skill目录"]
+                src_skill = skills_dir / skill_rel
+                if not src_skill.exists():
+                    raise FileNotFoundError(
+                        f"skill 目录不存在: {src_skill}\n"
+                        f"  skill目录={skill_rel}, skills_dir={skills_dir}"
+                    )
+                skill_rel_paths.append(skill_rel.replace("\\", "/"))
+
+            all_queries.append({
+                "topic": topic,
+                "queries": queries,
+                "skills": skill_rel_paths,
+            })
+
         with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
-            json.dump(user_queries, f, ensure_ascii=False, indent=2)
+            json.dump(all_queries, f, ensure_ascii=False, indent=2)
+
+        # 删除该 env 目录下的 zip 文件（内容已变更，旧 zip 失效）
+        for zip_file in pack_dir.glob("*.zip"):
+            zip_file.unlink()
+            print(f"    [删除旧 zip] {zip_file.name}")
 
         created_folders.append(str(pack_dir))
 
+    else:
+        # ── 纯 skills 模式：每个 topic 一个独立文件夹，各写一个 dict ──
+        for result_item in results:
+            topic = result_item["topic"]
+            skills = result_item["skills"]
+            queries = result_item["queries"]
+
+            folder_name = _sanitize_folder_name(f"{profile_stem}_{topic}")
+            pack_dir = output_dir / folder_name
+            pack_dir.mkdir(parents=True, exist_ok=True)
+
+            src_profile = profiles_dir / profile_rel_path
+            if not src_profile.exists():
+                raise FileNotFoundError(
+                    f"profile 文件不存在: {src_profile}\n"
+                    f"  profile_rel_path={profile_rel_path}, profiles_dir={profiles_dir}"
+                )
+            shutil.copy2(src_profile, pack_dir / Path(profile_rel_path).name)
+
+            skill_rel_paths = []
+            for skill_info in skills:
+                skill_rel = skill_info["skill目录"]
+                src_skill = skills_dir / skill_rel
+                if not src_skill.exists():
+                    raise FileNotFoundError(
+                        f"skill 目录不存在: {src_skill}\n"
+                        f"  skill目录={skill_rel}, skills_dir={skills_dir}"
+                    )
+                skill_rel_paths.append(skill_rel.replace("\\", "/"))
+
+            user_queries = {
+                "topic": topic,
+                "queries": queries,
+                "skills": skill_rel_paths,
+            }
+            with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
+                json.dump(user_queries, f, ensure_ascii=False, indent=2)
+
+            created_folders.append(str(pack_dir))
+
     return created_folders
+
+
+def _long_path(p: Path) -> str:
+    """Windows 长路径前缀，解决 >260 字符路径的 OSError。"""
+    s = str(p)
+    if sys.platform == "win32" and not s.startswith("\\\\?\\"):
+        s = "\\\\?\\" + os.path.abspath(s)
+    return s
 
 
 def run(
@@ -178,25 +226,38 @@ def run(
             p.parent for p in envs_dir.rglob("user_queries.json")
         )
         if dirs_to_pack:
+            # 先收集所有待打包文件
+            all_files = []
+            for dir_path in dirs_to_pack:
+                for file in sorted(dir_path.rglob("*")):
+                    if file.is_file():
+                        all_files.append((file, file.relative_to(envs_dir).as_posix()))
+            total = len(all_files)
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for dir_path in dirs_to_pack:
-                    for file in sorted(dir_path.rglob("*")):
-                        if file.is_file():
-                            arcname = file.relative_to(envs_dir).as_posix()
-                            zf.write(file, arcname)
-            print(f"已打包 zip: {zip_path}  ({len(dirs_to_pack)} 个环境目录)")
+                for i, (file, arcname) in enumerate(all_files, 1):
+                    with open(_long_path(file), "rb") as fh:
+                        zf.writestr(arcname, fh.read())
+                    if i % 50 == 0 or i == total:
+                        print(f"\r  打包进度: {i}/{total} ({i*100//total}%)", end="", flush=True)
+            print(f"\n已打包 zip: {zip_path}  ({len(dirs_to_pack)} 个环境目录, {total} 个文件)")
         else:
             print("[Warning] envs_dir 下未找到包含 user_queries.json 的目录，跳过打包")
     else:
         assert output_dir is not None, "envs_dir 和 output_dir 均为 None，无法打包"
         # 纯 skills 模式：将整个 output_dir 打包
         zip_path = output_dir.parent / f"{output_dir.name}.zip"
+        all_files = [
+            (f, f.relative_to(output_dir.parent).as_posix())
+            for f in sorted(output_dir.rglob("*")) if f.is_file()
+        ]
+        total = len(all_files)
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file in sorted(output_dir.rglob("*")):
-                if file.is_file():
-                    arcname = file.relative_to(output_dir.parent).as_posix()
-                    zf.write(file, arcname)
-        print(f"已打包 zip: {zip_path}")
+            for i, (file, arcname) in enumerate(all_files, 1):
+                with open(_long_path(file), "rb") as fh:
+                    zf.writestr(arcname, fh.read())
+                if i % 50 == 0 or i == total:
+                    print(f"\r  打包进度: {i}/{total} ({i*100//total}%)", end="", flush=True)
+        print(f"\n已打包 zip: {zip_path}  ({total} 个文件)")
 
 
 def main():

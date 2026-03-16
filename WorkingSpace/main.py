@@ -8,13 +8,12 @@ user_simulator_agent — main entry point
   3. 生成 / 下载所有文件
   4. 输出 env_config.json
   5. 生成 user_agent.py
-  6. 打包为 zip
 
 核心 API：
   run_pipeline(user_profile_path, output_dir, profile_dir_name=None)
 """
 
-import os, sys, json, zipfile, time
+import os, sys, json, time
 from pathlib import Path
 from datetime import datetime
 
@@ -45,13 +44,6 @@ def _banner(msg: str) -> None:
     print(f"  {msg}")
     print("═" * 60)
 
-
-def _zip_dir(src_dir: Path, zip_path: Path) -> None:
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fp in src_dir.rglob("*"):
-            if fp.is_file():
-                zf.write(fp, fp.relative_to(src_dir.parent))
-    print(f"  → 打包完成：{zip_path}  ({zip_path.stat().st_size // 1024} KB)")
 
 
 def _sanitize_name(name: str) -> str:
@@ -209,18 +201,17 @@ def run_pipeline(
     )
     print(f"\n  → pipeline_meta.json 已写入")
 
-    # ── 打包 zip ─────────────────────────────────────────────────────────────
-    zip_path = out_dir / f"{profile_dir_name}.zip"
-    _zip_dir(profile_dir, zip_path)
-
     # ── 完成汇总 ─────────────────────────────────────────────────────────────
     elapsed = time.time() - t0
     _banner("完成 [OK]")
     print(f"\n  模拟角色    : {profile.get('name')}（{profile.get('role')}）")
     print(f"  创建文件数  : {len(created)}")
     print(f"  耗时        : {elapsed:.1f} 秒\n")
-    print(f"  📁 {profile_dir_name}.zip : {zip_path}")
+    print(f"  📁 输出目录 : {out_dir}")
     print()
+
+    # ── 标记任务完成 ───────────────────────────────────────────────────────
+    (out_dir / "task_done.txt").write_text("", encoding="utf-8")
 
     return {
         "profile_dir_name": profile_dir_name,

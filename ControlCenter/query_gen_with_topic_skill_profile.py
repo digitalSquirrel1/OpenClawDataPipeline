@@ -335,7 +335,10 @@ def generate_queries(
     prompt = prompt_tmpl.format(**fmt_kwargs)
 
     result = llm.generate_json(prompt)
-    queries = result.get("queries", [])
+    if isinstance(result, list):
+        queries = result
+    else:
+        queries = result.get("queries", [])
     if not isinstance(queries, list):
         raise ValueError(f"LLM 返回的 queries 不是数组: {type(queries)}")
     return queries
@@ -518,6 +521,16 @@ def main():
     if envs_dir:
         # envs_dir 模式: 从环境目录的 pipeline_meta.json 反查 profile
         env_entries = load_profiles_from_envs(envs_dir, profiles_dir)
+        # skip_existing: 过滤掉 env 子目录下已存在 user_queries.json 的 profile
+        if args.skip_existing:
+            before = len(env_entries)
+            env_entries = [
+                (rel, prof, einfo) for rel, prof, einfo in env_entries
+                if not (envs_dir / einfo["env_rel_path"] / "user_queries.json").exists()
+            ]
+            skipped = before - len(env_entries)
+            if skipped:
+                print(f"  [skip_existing] 跳过 {skipped} 个已有 user_queries.json 的环境")
         all_profiles = [(rel, prof) for rel, prof, _ in env_entries]
         for rel, _, einfo in env_entries:
             env_info_map[rel] = einfo

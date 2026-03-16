@@ -248,8 +248,8 @@ def generate_env_for_profile(
     """为单个用户画像生成环境（直接调用 run_pipeline）。
 
     overwrite_existing=False（默认）时的逻辑：
-      1. env zip 文件已存在 → 视为完整生成，完全跳过
-      2. 不存在             → 完整 3 步 pipeline
+      1. 环境目录已存在 → 视为完整生成，完全跳过
+      2. 不存在          → 完整 3 步 pipeline
     """
     info = get_profile_info(profile_path)
     if not info:
@@ -258,17 +258,12 @@ def generate_env_for_profile(
     env_name    = f"{info['name']}_{info['role']}"
     env_path    = envs_dir / env_name
     profile_dir = env_path / env_name   # Steps 1-3 生成的文件系统目录
+    done_flag   = env_path / "task_done.txt"
     zip_path    = env_path / f"{env_name}.zip"
 
-    if not overwrite_existing and zip_path.exists():
-        print(f"  [SKIP] {env_name} (zip 已存在)")
+    if not overwrite_existing and (done_flag.exists() or zip_path.exists()):
+        print(f"  [SKIP] {env_name} (已完成)")
         return True
-
-    # zip 不存在但目录存在 → 上次未完成，清理后重新生成
-    if env_path.exists():
-        import shutil
-        print(f"  [Clean] {env_name} (无 zip，清理残留目录)")
-        shutil.rmtree(env_path)
 
     # 从头完整生成
     print(f"  [处理] {env_name}")

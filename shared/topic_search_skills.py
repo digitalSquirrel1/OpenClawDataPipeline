@@ -36,10 +36,8 @@ if _map_path_cfg:
 else:
     _INDEX_PATH = _skills_json_path.parent / "skills_index.json"
 
-_SKILLS_DIR = Path(_search_cfg.get(
-    "skills_dir",
-    r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\skill_localize\skills_library",
-))
+_skills_dir_rel = _search_cfg.get("skills_dir", "Outputs/skill_localize/skills_library")
+_SKILLS_DIR = _PROJECT_ROOT / _skills_dir_rel
 _MAX_SKILLS = _search_cfg.get("max_skills_per_topic", 5)
 
 
