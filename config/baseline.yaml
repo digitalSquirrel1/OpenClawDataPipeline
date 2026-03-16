@@ -53,15 +53,6 @@ user_agent_builder_config:
 user_query_generator_config:
   PROMPT_TMPL: "prompts/user_query_generate_prompt.md"
 
-uquery_generate_config:         # ControlCenter/uquery_generate.py
-  tasks:                        # 多组倾向配置，每组独立调用 LLM
-    - tendency: "生活类"
-      count: 10
-    - tendency: "学习类"
-      count: 10
-  max_concurrency: 8            # 并发处理 profile 数量
-  skip_existing: true           # 跳过已生成的 user_queries.json
-
 query_gen_with_topic_skill_profile_config:
   topics_txt_path: "Outputs/topics.txt"        # topics 文件路径（相对于项目根目录）
   profiles_dir: "Outputs/260316/profiles" # "Outputs/profiles"              # 用户 profile 所在文件夹（相对于项目根目录）
