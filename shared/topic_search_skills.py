@@ -84,7 +84,7 @@ def search_skills_by_topic(
     # 校验 skill 目录是否存在
     valid = []
     for skill in candidates:
-        skill_rel_dir = skill.get("skill目录", "")
+        skill_rel_dir = skill.get("skill目录", "").replace("\\", "/")
         skill_abs_dir = _SKILLS_DIR / skill_rel_dir
         if not skill_abs_dir.is_dir():
             print(f"[Warning] skill 目录不存在，已剔除: {skill_abs_dir}")
