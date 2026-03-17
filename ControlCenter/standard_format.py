@@ -46,6 +46,30 @@ def _resolve(rel_or_none: str | None, default_rel: str) -> Path:
     return p if p.is_absolute() else (_PROJECT_ROOT / p).resolve()
 
 
+def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]]]:
+    """将 queries 列表拆分为纯字符串列表和对应的 required_skills 列表。
+
+    兼容旧格式（纯字符串列表）和新格式（字典列表）。
+
+    Returns:
+        (query_strings, required_skills_list)
+        - query_strings: list[str]，每个 query 的文本
+        - required_skills_list: list[list[str]]，与 query_strings 一一对应的技能列表
+    """
+    query_strings = []
+    required_skills_list = []
+    for item in queries:
+        if isinstance(item, str):
+            query_strings.append(item)
+            required_skills_list.append([])
+        elif isinstance(item, dict):
+            query_strings.append(item.get("queries", ""))
+            required_skills_list.append(item.get("required_skills", []))
+        else:
+            raise ValueError(f"queries 元素格式异常: {type(item)} — {item}")
+    return query_strings, required_skills_list
+
+
 def _sanitize_folder_name(name: str) -> str:
     """清理文件夹名中的非法字符。"""
     for ch in r'<>:"/\|?*':
@@ -122,11 +146,15 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel.replace("\\", "/"))
 
+            # 拆分 queries 和 required_skills
+            query_strings, required_skills_list = _normalize_queries(queries)
+
             all_queries.append({
                 "topic": topic,
                 "system_type": system_type,
-                "queries": queries,
+                "queries": query_strings,
                 "skills": skill_rel_paths,
+                "required_skills": required_skills_list,
             })
 
         with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
@@ -170,11 +198,15 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel.replace("\\", "/"))
 
+            # 拆分 queries 和 required_skills
+            query_strings, required_skills_list = _normalize_queries(queries)
+
             user_queries = [{
                 "topic": topic,
                 "system_type": system_type,
-                "queries": queries,
+                "queries": query_strings,
                 "skills": skill_rel_paths,
+                "required_skills": required_skills_list,
             }]
             with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
                 json.dump(user_queries, f, ensure_ascii=False, indent=2)

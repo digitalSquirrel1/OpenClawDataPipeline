@@ -26,7 +26,7 @@ query_gen_with_topic_skill_profile.py — 根据 topics + skills + user_profile 
   python ControlCenter/query_gen_with_topic_skill_profile.py --skip-existing
 """
 
-import os, sys, json, argparse, random, threading, math
+import os, sys, json, argparse, random, threading
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -269,19 +269,12 @@ def load_profiles_from_envs(
 
         source_profile_path = Path(source_profile_path).resolve()
 
-        # 若 source_profile_path 不在 profiles_dir 下（如路径迁移后 meta 未更新），
-        # 则按文件名在 profiles_dir 里兜底查找
-        if not str(source_profile_path).startswith(str(profiles_dir_resolved)):
-            fallback = profiles_dir_resolved / source_profile_path.name
-            if fallback.exists():
-                print(f"  [Info] source_profile_path 路径迁移，已兜底定位: {fallback.name}")
-                source_profile_path = fallback
-            else:
-                print(
-                    f"  [Warning] source_profile_path 不在 profiles_dir 下且兜底失败，已跳过: "
-                    f"{source_profile_path.name}"
-                )
-                continue
+        # assert source_profile_path 以 profiles_dir 开头
+        assert str(source_profile_path).startswith(str(profiles_dir_resolved)), (
+            f"source_profile_path 不以 profiles_dir 开头!\n"
+            f"  source_profile_path: {source_profile_path}\n"
+            f"  profiles_dir:        {profiles_dir_resolved}"
+        )
 
         if not source_profile_path.exists():
             print(f"  [Warning] profile 文件不存在: {source_profile_path}")
@@ -303,13 +296,6 @@ def load_profiles_from_envs(
     return results
 
 
-_DETAILED_QUERY_HINT = (
-    "\n\n【特别要求】本次请生成较为详细、具体的 query，query 长度应该较长，"
-    "需包含丰富的背景信息、具体的操作细节和明确的预期结果，"
-    "体现用户在真实场景中的深层次需求，避免简短笼统的表达。"
-)
-
-
 def generate_queries(
     topic: str,
     skills: list[dict],
@@ -318,23 +304,15 @@ def generate_queries(
     prompt_tmpl: str,
     n: int = 5,
     env_info: dict | None = None,
-    num_calls: int = 3,
-    detailed_query_ratio: float = 0.3,
-) -> list[str]:
-    """多次调用 LLM，组合生成 n 条 queries 以提升多样性。
-
-    将 n 条拆分为 num_calls 次调用，每次调用生成约 ceil(n/num_calls) 条。
-    每次调用按 detailed_query_ratio 概率随机追加「详细型 query」要求，
-    使部分批次生成较长、具体、含背景信息的 query。
+) -> list[dict]:
+    """调用 LLM 为一组 (topic, skills, profile) 生成 queries。
 
     Args:
         env_info: 环境信息字典（含 dir_count, file_types_summary, file_samples），
                   为 None 时使用不含环境信息的 prompt。
-        num_calls: LLM 调用次数，拆分多次以降低同批次相似性。
-        detailed_query_ratio: 每次调用追加「详细型」要求的概率。
 
     Returns:
-        query 字符串列表（长度 <= n）
+        query 字典列表，每个元素含 "queries"(str) 和 "required_skills"(list[str])
 
     Raises:
         ValueError: LLM 返回无法解析的 JSON
@@ -342,41 +320,42 @@ def generate_queries(
     skills_info = _format_skills_info(skills)
     profile_json = json.dumps(profile, ensure_ascii=False, indent=2)
 
-    base_fmt_kwargs = dict(
+    fmt_kwargs = dict(
         topic=topic,
         skills_info=skills_info,
         profile_json=profile_json,
+        n=n,
     )
+
     if env_info is not None:
-        base_fmt_kwargs["dir_count"] = env_info["dir_count"]
-        base_fmt_kwargs["file_types_summary"] = env_info["file_types_summary"]
-        base_fmt_kwargs["file_samples"] = env_info["file_samples"]
+        fmt_kwargs["dir_count"] = env_info["dir_count"]
+        fmt_kwargs["file_types_summary"] = env_info["file_types_summary"]
+        fmt_kwargs["file_samples"] = env_info["file_samples"]
 
-    n_per_call = max(1, math.ceil(n / num_calls))
-    all_queries: list[str] = []
+    prompt = prompt_tmpl.format(**fmt_kwargs)
 
-    for _ in range(num_calls):
-        remaining = n - len(all_queries)
-        if remaining <= 0:
-            break
-        n_this_call = min(n_per_call, remaining)
+    result = llm.generate_json(prompt)
+    if isinstance(result, list):
+        queries = result
+    else:
+        queries = result.get("queries", [])
+    if not isinstance(queries, list):
+        raise ValueError(f"LLM 返回的 queries 不是数组: {type(queries)}")
 
-        fmt_kwargs = {**base_fmt_kwargs, "n": n_this_call}
-        prompt = prompt_tmpl.format(**fmt_kwargs)
-
-        if random.random() < detailed_query_ratio:
-            prompt += _DETAILED_QUERY_HINT
-
-        result = llm.generate_json(prompt)
-        if isinstance(result, list):
-            queries = result
+    # 标准化：确保每个元素都是 {"queries": str, "required_skills": list} 格式
+    normalized = []
+    for item in queries:
+        if isinstance(item, str):
+            # 兼容旧格式：纯字符串
+            normalized.append({"queries": item, "required_skills": []})
+        elif isinstance(item, dict):
+            normalized.append({
+                "queries": item.get("queries", ""),
+                "required_skills": item.get("required_skills", []),
+            })
         else:
-            queries = result.get("queries", [])
-        if not isinstance(queries, list):
-            raise ValueError(f"LLM 返回的 queries 不是数组: {type(queries)}")
-        all_queries.extend(queries)
-
-    return all_queries
+            raise ValueError(f"LLM 返回的 query 元素格式异常: {type(item)}")
+    return normalized
 
 
 def _append_record_to_file(
@@ -424,8 +403,6 @@ def _run_task(
     file_lock: threading.Lock,
     env_info: dict | None = None,
     system_type: str | None = None,
-    num_calls: int = 3,
-    detailed_query_ratio: float = 0.3,
 ) -> dict:
     """单个 task: 调用 LLM 生成 queries 并立即追加保存。
 
@@ -441,8 +418,6 @@ def _run_task(
             prompt_tmpl=prompt_tmpl,
             n=n_queries,
             env_info=env_info,
-            num_calls=num_calls,
-            detailed_query_ratio=detailed_query_ratio,
         )
         record = {
             "topic": topic,
@@ -518,18 +493,6 @@ def parse_args():
         default=gen_cfg.get("skip_existing", True),
         help="跳过已生成结果的 profile",
     )
-    parser.add_argument(
-        "--num-calls",
-        type=int,
-        default=gen_cfg.get("num_calls", 3),
-        help="每组 (topic, profile) 拆分成多少次 LLM 调用以提升多样性（默认 3）",
-    )
-    parser.add_argument(
-        "--detailed-query-ratio",
-        type=float,
-        default=gen_cfg.get("detailed_query_ratio", 0.3),
-        help="每次 LLM 调用追加「详细型 query」要求的概率（默认 0.3）",
-    )
     return parser.parse_args()
 
 
@@ -560,8 +523,6 @@ def main():
 
     n_queries = args.queries_per_combination
     num_user_per_topic = args.num_user_per_topic
-    num_calls = args.num_calls
-    detailed_query_ratio = args.detailed_query_ratio
 
     # ── 加载 topics ─────────────────────────────────────────────────────────
     topics = load_topics(topics_path)
@@ -647,8 +608,6 @@ def main():
     pipeline_cfg = cfg.get("pipeline_config", {})
     max_workers = int(os.getenv("MAX_LLM_CALLS", pipeline_cfg.get("MAX_LLM_CALLS", 4)))
     print(f"  并发度 (MAX_LLM_CALLS): {max_workers}")
-    print(f"  LLM 分批调用次数 (num_calls): {num_calls}")
-    print(f"  详细型 query 比例 (detailed_query_ratio): {detailed_query_ratio}")
 
     # ── 组装所有 (topic, profile) 排列组合为 task 列表 ───────────────────────
     # 每个 task 独立查询 skills（利用查询接口的随机性）
@@ -752,8 +711,6 @@ def main():
                 file_lock=t["file_lock"],
                 env_info=t["env_info"],
                 system_type=t["system_type"],
-                num_calls=num_calls,
-                detailed_query_ratio=detailed_query_ratio,
             ): t
             for t in tasks
         }

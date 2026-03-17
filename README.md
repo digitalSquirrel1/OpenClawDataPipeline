@@ -9,7 +9,7 @@
 ```
 user_simulator_agent/
 ├── config/
-│   ├── baseline.yaml          # 中央配置（API 密钥、路径、模型、并发参数）
+│   ├── baseline.yaml          # 脱敏配置模板（需改名为 baseline_using.yaml 使用）
 │   └── config_loader.py       # YAML 配置加载 & prompt 路径解析
 │
 ├── shared/
@@ -85,20 +85,9 @@ python ControlCenter/standard_format.py
 
 ## 配置
 
-所有配置集中在 `config/baseline.yaml`，可通过环境变量覆盖：
+1. **`config/baseline.yaml` 是脱敏的配置模板**，仅作为格式示例，其中不包含真实的 API 密钥，无法直接运行，代码也不会读取该文件。需要运行时，请找开发者获取含有密钥的 `baseline_using.yaml` 配置文件并放置在 `config/` 目录下；或者自行补充密钥后，将 `baseline.yaml` 改名为 `baseline_using.yaml`。代码只会读取命名为 `baseline_using.yaml` 的配置文件。
 
-| 环境变量 | 用途 | 默认值 |
-|---------|------|--------|
-| `LLM_BACKEND` | LLM 后端：`"openai"` 或 `"anthropic"` | `"openai"` |
-| `LLM_API_KEY` | OpenAI 兼容 API Key | baseline.yaml 内置 |
-| `LLM_BASE_URL` | OpenAI 兼容端点 | `https://api.gptplus5.com/v1` |
-| `LLM_MODEL` | 模型名称 | baseline.yaml 内置 |
-| `ANTHROPIC_API_KEY` | Anthropic 密钥（backend=anthropic 时需要） | — |
-| `SERPER_KEY` | Google Serper 搜索 API Key | baseline.yaml 内置 |
-| `JINA_KEY` | Jina Reader 网页提取 API Key | baseline.yaml 内置 |
-| `MAX_WORKERS` | 文件下载/生成并发线程数 | `8` |
-| `MAX_LLM_CALLS` | LLM 并发请求上限 | `4` |
-| `MAX_SEARCHES` | Serper 并发搜索上限 | `5` |
+2. **建议将所有配置修改集中在 `baseline_using.yaml` 中完成**，不建议使用环境变量覆盖或在代码中修改默认值。
 
 ---
 
@@ -114,9 +103,9 @@ python ControlCenter/standard_format.py
 python ControlCenter/generate_user_profile.py
 ```
 
-> 无命令行参数，所有配置从 `config/baseline.yaml` 的 `generate_user_profile_config` 段读取。
+> 无命令行参数，所有配置从 `config/baseline_using.yaml` 的 `generate_user_profile_config` 段读取。
 
-**配置项（baseline.yaml）：**
+**配置项（baseline_using.yaml）：**
 
 | 配置键 | 说明 | 默认值 |
 |--------|------|--------|
@@ -185,8 +174,8 @@ python ControlCenter/batch_generate.py --overwrite-existing
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--profiles-dir` | 用户画像 JSON 所在目录 | `Outputs/profiles`（可由 baseline.yaml 覆盖） |
-| `--envs-dir` | 环境输出目录 | `Outputs/environments`（可由 baseline.yaml 覆盖） |
+| `--profiles-dir` | 用户画像 JSON 所在目录 | `Outputs/profiles`（可由 baseline_using.yaml 覆盖） |
+| `--envs-dir` | 环境输出目录 | `Outputs/environments`（可由 baseline_using.yaml 覆盖） |
 | `--overwrite-existing` | 覆盖已生成的环境（默认：已有 zip 则跳过） | `False` |
 
 **输入：**
@@ -299,8 +288,8 @@ Outputs/queries_with_skills/
         { "skill名称": "Python编程", "skill目录": "coding-agents-and-ides/..." }
       ],
       "queries": [
-        "如何优化 Python 列表推导式的性能？",
-        "Django REST framework 如何实现分页？",
+        {"queries": "如何优化 Python 列表推导式的性能？", "required_skills": ["Python编程"]},
+        {"queries": "Django REST framework 如何实现分页？", "required_skills": []},
         ...
       ]
     },
@@ -385,23 +374,32 @@ Outputs/environments/林辰_程序员/
 └── ...
 ```
 
-**user_queries.json 结构：**
+**user_queries.json 结构（两种模式输出格式一致）：**
 
 ```json
-{
-  "topic": "编程问题解答",
-  "queries": [
-    "如何优化 Python 列表推导式的性能？",
-    "Django REST framework 如何实现分页？"
-  ],
-  "skills": [
-    "coding-agents-and-ides/some-skill",
-    "cli-utilities/another-skill"
-  ]
-}
+[
+  {
+    "topic": "编程问题解答",
+    "system_type": "windows",
+    "queries": [
+      "如何优化 Python 列表推导式的性能？",
+      "Django REST framework 如何实现分页？"
+    ],
+    "skills": [
+      "coding-agents-and-ides/some-skill",
+      "cli-utilities/another-skill"
+    ],
+    "required_skills": [
+      ["Python编程"],
+      []
+    ]
+  }
+]
 ```
 
-> `skills` 列表中为相对于 `--skills-dir` 的路径。程序会验证每个 skill 目录的存在性，不存在则报错。
+- `queries`: 纯字符串列表，每条 query 的文本
+- `required_skills`: `list[list[str]]`，与 `queries` 一一对应，记录每条 query 依赖的 skill 名称
+- `skills`: 相对于 `--skills-dir` 的路径列表。程序会验证每个 skill 目录的存在性，不存在则报错
 
 ---
 
@@ -489,7 +487,7 @@ user_profile.txt / profile.json
 
 ### ConfigLoader (`config/config_loader.py`)
 
-- `load_config()` → 加载并缓存 `baseline.yaml`
+- `load_config()` → 加载并缓存 `baseline_using.yaml`
 - `get_prompt(path)` → 读取 prompt 模板文件内容
 
 ### llm_caller (`shared/llm_caller.py`)
@@ -503,5 +501,5 @@ user_profile.txt / profile.json
 1. **显性错误处理** — 异常直接报错并中断，不降级或抑制
 2. **并行处理** — 文件处理、LLM 调用均使用 ThreadPoolExecutor
 3. **信号量限流** — LLM 并发和搜索并发通过信号量/线程池控制
-4. **配置驱动** — 所有路径、密钥、Prompt 集中在 `baseline.yaml`
+4. **配置驱动** — 所有路径、密钥、Prompt 集中在 `baseline_using.yaml`
 5. **代码复用优先** — 优先复用项目内已有代码，减少新增
