@@ -91,6 +91,7 @@ def run_pipeline(
     user_profile_path: Path | str,
     output_dir: Path | str,
     profile_dir_name: str | None = None,
+    query: str | None = None,
 ) -> dict:
     """
     执行完整的 4 步 pipeline。
@@ -154,6 +155,22 @@ def run_pipeline(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── Query 注入（可选）──────────────────────────────────────────────────
+    if query:
+        print(f"\n  [Query 模式] 注入 query: {query[:80]}...")
+        original_task = profile.get("task_description", "")
+        original_ctx  = profile.get("task_context", "")
+        profile["task_description"] = (
+            f'用户当前收到一个具体请求："{query}"。'
+            f'需要确保文件系统中真实存在能支撑该请求的相关文件。'
+            f'原始工作背景：{original_task}'
+        )
+        profile["task_context"] = (
+            f'该请求要求文件系统中存在可直接使用的文件。'
+            f'原始上下文：{original_ctx}'
+        )
+        profile["user_query"] = query
+
     # 持久化 Step 1 结果，供后续断点续跑使用
     (out_dir / "profile_analyzed.json").write_text(
         json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -195,6 +212,7 @@ def run_pipeline(
         "env_dir": str(out_dir.resolve()),
         "profile_dir_name": profile_dir_name,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "query": query,
     }
     (out_dir / "pipeline_meta.json").write_text(
         json.dumps(pipeline_meta, ensure_ascii=False, indent=2), encoding="utf-8"

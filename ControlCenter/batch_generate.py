@@ -144,6 +144,12 @@ def parse_args():
         action="store_true",
         help="覆盖已生成的环境（默认跳过）"
     )
+    parser.add_argument(
+        "--queries-dir",
+        type=str,
+        default=_batch_cfg.get("queries_dir", None),
+        help="queries JSON 目录路径，为每个 profile 随机选一条 query 注入环境生成（默认：None，LLM 自由发挥）",
+    )
     return parser.parse_args()
 
 
@@ -242,10 +248,25 @@ def generate_file_mappings(env_path: Path, profile_dir: Path):
         print(f"    → MAP_Linux.json 已生成 ({len(linux_mapping)} 条)")
 
 
+def _pick_query_for_profile(queries_dir: Path, profile_stem: str) -> str | None:
+    """从 queries_dir 中找到该 profile 对应的 JSON，随机选一条 query 返回。"""
+    query_file = queries_dir / f"{profile_stem}_queries.json"
+    if not query_file.exists():
+        return None
+    try:
+        data = json.loads(query_file.read_text(encoding="utf-8"))
+        all_queries = [q for r in data.get("results", []) for q in r.get("queries", [])]
+        return random.choice(all_queries) if all_queries else None
+    except Exception as e:
+        print(f"  [Warning] 读取 query 文件失败: {query_file.name} — {e}")
+        return None
+
+
 def generate_env_for_profile(
     profile_path: Path,
     envs_dir: Path,
     overwrite_existing: bool = False,
+    query: str | None = None,
 ) -> bool:
     """为单个用户画像生成环境（直接调用 run_pipeline）。
 
@@ -277,6 +298,7 @@ def generate_env_for_profile(
             user_profile_path=profile_path,
             output_dir=env_path,
             profile_dir_name=env_name,
+            query=query,
         )
         print(f"  [OK] {env_name} 生成成功")
         fix_readme(profile_dir, collect_disk_files(profile_dir))
@@ -303,6 +325,7 @@ def main():
     args = parse_args()
     profiles_dir = Path(args.profiles_dir)
     envs_dir = Path(args.envs_dir)
+    queries_dir = Path(_resolve(args.queries_dir, Path(""))) if args.queries_dir else None
     max_concurrency = int(_cfg.get("pipeline_config", {}).get("MAX_LLM_CALLS", 4))
 
     # 检查路径
@@ -316,6 +339,8 @@ def main():
     print(f"\n  用户画像目录: {profiles_dir}")
     print(f"  环境输出目录: {envs_dir}")
     print(f"  最大并发数: {max_concurrency}")
+    if queries_dir:
+        print(f"  Query 驱动模式: {queries_dir}")
 
     # 查找所有用户画像文件
     profile_files = sorted(profiles_dir.glob("*.json"))
@@ -334,10 +359,16 @@ def main():
     def _task(profile_file: Path) -> tuple[Path, bool]:
         tag = f"[{profile_file.stem}]"
         _task_tag.set(tag)
+        query = None
+        if queries_dir:
+            query = _pick_query_for_profile(queries_dir, profile_file.stem)
+            if query:
+                print(f"  [Query] {profile_file.stem}: {query[:60]}...")
         success = generate_env_for_profile(
             profile_file,
             envs_dir,
             overwrite_existing=args.overwrite_existing,
+            query=query,
         )
         return profile_file, success
 
