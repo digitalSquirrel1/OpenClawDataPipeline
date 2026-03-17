@@ -304,7 +304,7 @@ def generate_queries(
     prompt_tmpl: str,
     n: int = 5,
     env_info: dict | None = None,
-) -> list[str]:
+) -> list[dict]:
     """调用 LLM 为一组 (topic, skills, profile) 生成 queries。
 
     Args:
@@ -312,7 +312,7 @@ def generate_queries(
                   为 None 时使用不含环境信息的 prompt。
 
     Returns:
-        query 字符串列表
+        query 字典列表，每个元素含 "queries"(str) 和 "required_skills"(list[str])
 
     Raises:
         ValueError: LLM 返回无法解析的 JSON
@@ -341,7 +341,21 @@ def generate_queries(
         queries = result.get("queries", [])
     if not isinstance(queries, list):
         raise ValueError(f"LLM 返回的 queries 不是数组: {type(queries)}")
-    return queries
+
+    # 标准化：确保每个元素都是 {"queries": str, "required_skills": list} 格式
+    normalized = []
+    for item in queries:
+        if isinstance(item, str):
+            # 兼容旧格式：纯字符串
+            normalized.append({"queries": item, "required_skills": []})
+        elif isinstance(item, dict):
+            normalized.append({
+                "queries": item.get("queries", ""),
+                "required_skills": item.get("required_skills", []),
+            })
+        else:
+            raise ValueError(f"LLM 返回的 query 元素格式异常: {type(item)}")
+    return normalized
 
 
 def _append_record_to_file(
