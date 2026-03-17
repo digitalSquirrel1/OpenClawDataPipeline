@@ -288,8 +288,8 @@ Outputs/queries_with_skills/
         { "skill名称": "Python编程", "skill目录": "coding-agents-and-ides/..." }
       ],
       "queries": [
-        "如何优化 Python 列表推导式的性能？",
-        "Django REST framework 如何实现分页？",
+        {"queries": "如何优化 Python 列表推导式的性能？", "required_skills": ["Python编程"]},
+        {"queries": "Django REST framework 如何实现分页？", "required_skills": []},
         ...
       ]
     },
@@ -374,23 +374,32 @@ Outputs/environments/林辰_程序员/
 └── ...
 ```
 
-**user_queries.json 结构：**
+**user_queries.json 结构（两种模式输出格式一致）：**
 
 ```json
-{
-  "topic": "编程问题解答",
-  "queries": [
-    "如何优化 Python 列表推导式的性能？",
-    "Django REST framework 如何实现分页？"
-  ],
-  "skills": [
-    "coding-agents-and-ides/some-skill",
-    "cli-utilities/another-skill"
-  ]
-}
+[
+  {
+    "topic": "编程问题解答",
+    "system_type": "windows",
+    "queries": [
+      "如何优化 Python 列表推导式的性能？",
+      "Django REST framework 如何实现分页？"
+    ],
+    "skills": [
+      "coding-agents-and-ides/some-skill",
+      "cli-utilities/another-skill"
+    ],
+    "required_skills": [
+      ["Python编程"],
+      []
+    ]
+  }
+]
 ```
 
-> `skills` 列表中为相对于 `--skills-dir` 的路径。程序会验证每个 skill 目录的存在性，不存在则报错。
+- `queries`: 纯字符串列表，每条 query 的文本
+- `required_skills`: `list[list[str]]`，与 `queries` 一一对应，记录每条 query 依赖的 skill 名称
+- `skills`: 相对于 `--skills-dir` 的路径列表。程序会验证每个 skill 目录的存在性，不存在则报错
 
 ---
 
