@@ -5,17 +5,16 @@ User Profile 生成器
 基于 LLM 生成多样化的用户画像（user profile），保存到 Outputs/profiles 目录。
 
 输出格式：
-- 每个用户画像包含：基本信息、生活喜好、学习工作喜好、常用工具、常用网站、Query 示例
-- 文件名格式：user_profile_序号_职业_时间戳.json
+• 每个用户画像包含：基本信息、生活喜好、学习工作喜好、常用工具、常用网站、Query 示例
+
+• 文件名格式：user_profile_序号_职业_时间戳.json
+
 """
 
-import os, sys, json, argparse
+import os, sys, json, re, time, random
 from pathlib import Path
 from datetime import datetime
-import httpx, ssl
-from openai import OpenAI
-import time
-import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 支持中文字符显示
 if sys.platform == "win32":
@@ -26,22 +25,32 @@ if sys.platform == "win32":
         pass
 
 # ─── 项目路径设置 ───────────────────────────────────────────────────────────────
-_CONTROL_CENTER = Path(__file__).parent
+_CONTROL_CENTER = Path(__file__).resolve().parent
 _PROJECT_ROOT = _CONTROL_CENTER.parent
 # profiles 目录放在项目根目录的 Outputs 下
 _OUTPUTS_DIR = _PROJECT_ROOT / "Outputs"
 _PROFILES_DIR = _OUTPUTS_DIR / "profiles"
 
-# ─── LLM API 配置（参考 openai_api_v2.py）────────────────────────────────────────
-LLM_API_KEY = os.getenv("LLM_API_KEY", "sk-U2BkWhBzdLcJn01ovsXXESVO2nboXEjKqjj8WxECS6Dom5UZ")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.gptplus5.com/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5.2")
+# ─── 加载配置 ──────────────────────────────────────────────────────────────────
+sys.path.insert(0, str(_PROJECT_ROOT))
+from config.config_loader import load_config, get_prompt
+from shared.llm_caller import chat_with_retry
 
-# ─── 用户画像生成提示词 ─────────────────────────────────────────────────────────
-# ─── 维护的职业列表 ─────────────────────────────────────────────────────────
+_cfg = load_config()
+_api_cfg = _cfg.get("api_config", {})
+_gen_cfg = _cfg.get("generate_user_profile_config", {})
+
+# ─── LLM API 配置 ────────────────────────────────────────────────────────────
+LLM_MODEL    = os.getenv("LLM_MODEL",    _api_cfg.get("LLM_MODEL",       "gpt-4o"))
+
+# ─── 并行线程数（复用 pipeline_config.MAX_WORKERS 或默认 4）─────────────────────
+_pipeline_cfg = _cfg.get("pipeline_config", {})
+MAX_WORKERS = int(os.getenv("MAX_LLM_CALLS", _pipeline_cfg.get("MAX_LLM_CALLS", 4)))
+
+# ─── 维护的职业列表 ──────────────────────────────────────────────────────────────
 OCCUPATIONS = [
     # 一、国家机关 / 政务类
-    "公务员", "民警", "法官", "检察官", "军人", 
+    "公务员", "民警", "法官", "检察官", "军人",
     # 二、教育类
     "教师", "大学教授", "体育教练", "企业培训师",
     # 三、医疗健康类
@@ -66,260 +75,166 @@ OCCUPATIONS = [
     "销售代表", "市场策划专员"
 ]
 
-# ─── 用户画像生成提示词模板 ─────────────────────────────────────────────────────────
-# 注意：使用 {gender}, {age}, {occupation} 作为占位符，每次生成前注入随机属性
-PROFILE_GENERATION_PROMPT_TEMPLATE = """请生成一个用户档案，记录用户的基本信息，如姓名，性别，年龄，性格，职业，家庭身体情况，生活与学习中的喜好，常用的电脑软件工具与网站等。
-
-【强制人物设定】（请务必基于以下设定进行合理扩展）
-- 性别：{gender}
-- 年龄：{age}岁
-- 职业：{occupation}
-
-已知电脑可以实现的操作如下：
-• 网络/本地信息操作：网络搜索，数据库操作，调研与推荐
-• 定时任务：闹钟，提醒，任务管理。。。
-• 各种项目开发：脚本构建，跨软件自动化，快捷键定制。。。
-• 内容整合：图表生成，摘要，数据清洗，合规校验等。。。
-• 形式化展示：网页，ppt，海报，文档格式转换。。。
-• 浏览器操作：社区互动，资料爬取，资料上传，github管理。。。
-• 题目解答
-• 各类工作流
-• 系统操作管理
-• 常用app或软件操作
-• 生活技能：出行订改，购物选品，地图查询，计算，健康管理，理财。。。
-• 多模态交互与处理：语音，图像，视频，文字的编辑，转换，识别，截取，生成，分析；代表场景娱乐创作：视频剪辑，文学创作，歌曲生成等。
-
-输出为严格的JSON格式，档案格式示例：
-{{
-  "基本信息": {{
-    "姓名": "林辰",
-    "性别": "男",
-    "年龄": 26,
-    "性格": "理性严谨、注重效率、喜欢探索新技术、做事有条理、乐于钻研、温和内敛",
-    "职业": "互联网行业AI算法/软件开发工程师",
-    "家庭情况": "已经结婚，夫妻关系融洽，暂无子女但有计划",
-    "身体情况": "无慢性疾病，但感冒次数多。身高178，体重130偏轻。睡眠情况不理想"
-  }},
-  "生活喜好": [
-    "关注数码科技、智能产品与AI前沿动态",
-    "喜欢高效规划生活，注重健康管理与时间安排",
-    "对理财、资讯整理、影音创作有轻度兴趣",
-    "每周至少一次游泳和慢跑，参加过马拉松比赛",
-    "对冒险类电影非常热爱",
-    "喜欢动作类电子游戏",
-    "习惯用电脑/工具提升生活效率，拒绝繁琐手动操作"
-  ],
-  "学习工作喜好": [
-    "专注AI大模型、算法、编程开发、技术部署",
-    "喜欢做结构化资料整理、数据处理、内容输出",
-    "热衷自动化工具、脚本、工作流优化",
-    "常需要做演示文档、技术调研、项目开发与调试"
-  ],
-  "常用电脑工具": [
-    "Google Chrome",
-    "微信/企业微信（PC）",
-    "WPS Office",
-    "Notion",
-    "Obsidian",
-    "Evernote（历史资料）",
-    "Adobe Premiere Pro",
-    "DaVinci Resolve",
-    "Adobe Audition",
-    "Adobe Photoshop / Lightroom",
-    "剪映专业版",
-    "Final Draft（或国产剧本工具）",
-    "Xmind",
-    "Canva",
-    "百度网盘/阿里云盘",
-    "VLC",
-    "讯飞听见（转写）",
-    "日历与提醒（系统/滴答清单）"
-  ],
-  "常用网站": [
-    "小红书（穿搭/妆造/通告信息）",
-    "微博（行业动态/剧组信息）",
-    "Bilibili（表演课、拉片、剪辑教程）",
-    "豆瓣电影（片单与口碑）",
-    "IMDb（对标作品）",
-    "时光网",
-    "站酷（海报/视觉参考）",
-    "Canva网页版",
-    "腾讯文档",
-    "猫眼/淘票票（票房与宣发观察）",
-    "高德地图/Google Maps",
-    "携程/飞猪（出行预订）"
-  ]
-}}"""
-
 
 class ProfileGenerator:
     """用户画像生成器"""
 
-    def __init__(self, api_key: str, base_url: str, model: str, proxy: str = None):
-        self.api_key = api_key
-        self.base_url = base_url
+    def __init__(self, model: str):
         self.model = model
-        self.proxy = proxy
-        self._init_client()
-
-    def _init_client(self):
-        """初始化 LLM 客户端"""
-        if self.proxy:
-            httpx_client = httpx.Client(verify=False, proxy=self.proxy)
-        else:
-            httpx_client = httpx.Client(verify=False)
-
-        ssl._create_default_https_context = ssl._create_unverified_context
-        os.environ["OPENAI_API_KEY"] = self.api_key
-        os.environ["OPENAI_BASE_URL"] = self.base_url
-        self.client = OpenAI(http_client=httpx_client, timeout=60.0)
+        # 从配置读取 prompt 模板
+        prompt_path = _gen_cfg.get("PROFILE_GENERATION_PROMPT", "prompts/profile_generation_prompt.md")
+        self.prompt_template = get_prompt(prompt_path)
 
     def _get_random_attributes(self):
         """生成随机的性别、年龄和职业"""
-        # 性别：均匀分布
         gender = random.choice(["男", "女"])
-        
-        # 年龄：正态分布 (均值35，标准差8)。
-        # 使用 max 和 min 将年龄限制在 18 到 65 岁之间，确保符合职场逻辑
-        age_raw = random.gauss(35, 8)
-        age = max(18, min(65, int(age_raw)))
-        
-        # 职业：均匀分布
+        age = max(18, min(65, int(random.gauss(35, 8))))
         occupation = random.choice(OCCUPATIONS)
-        
         return gender, age, occupation
 
-    def generate_profiles(self, count: int = 3, output_dir: Path = None) -> list[Path]:
-        """生成用户画像并成功后立即保存"""
-        saved_files = []
+    def _build_identity_block(self) -> str:
+        """构建单个人物设定的文本块"""
+        g, a, o = self._get_random_attributes()
+        return f"人物：性别 {g}，年龄 {a}岁，职业 {o}"
 
-        for i in range(count):
-            print(f"\n  [LLM] 生成第 {i+1}/{count} 个用户画像...")
+    def _call_llm(self, call_index: int) -> dict:
+        """
+        单次 LLM 调用，生成 1 个画像。
+        返回解析出的 profile 字典。
+        """
+        identity_block = self._build_identity_block()
+        prompt = self.prompt_template.replace("{identity_assignments}", identity_block)
 
-            # 1. 触发随机引擎
-            rand_gender, rand_age, rand_occupation = self._get_random_attributes()
-            print(f"  [引擎] 本次随机设定 -> 性别: {rand_gender}, 年龄: {rand_age}, 职业: {rand_occupation}")
+        start_time = time.time()
+        content = chat_with_retry(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.model,
+        )
+        elapsed = time.time() - start_time
+        print(f"  [LLM] 第 {call_index} 次调用完成，耗时 {elapsed:.1f}s")
 
-            # 2. 将随机设定注入提示词
-            current_prompt = PROFILE_GENERATION_PROMPT_TEMPLATE.format(
-                gender=rand_gender,
-                age=rand_age,
-                occupation=rand_occupation
-            )
-
-            max_retries = 3
-            retry_delay = 2
-            response = None
-
-            for retry in range(max_retries):
-                try:
-                    start_time = time.time()
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "user", "content": current_prompt}
-                        ]
-                    )
-                    elapsed = time.time() - start_time
-                    print(f"  [LLM] 请求完成，耗时 {elapsed:.1f} 秒")
-                    break  
-                except Exception as e:
-                    if retry < max_retries - 1:
-                        wait_time = retry_delay * (retry + 1)
-                        print(f"  [Retry] 请求失败，{wait_time}秒后重试 ({retry + 1}/{max_retries})...")
-                        print(f"    错误: {e}")
-                        time.sleep(wait_time)
-                    else:
-                        print(f"  [Error] 第 {i+1} 个画像生成失败（已重试{max_retries}次）: {e}")
-                        response = None
-                        continue  
-
-            if response is None:
-                continue
-            # 如果请求失败，跳过本次
-            if response is None:
-                continue
-
-            # 解析响应
-            content = response.choices[0].message.content
-
-            # 尝试提取 JSON（可能包含在 markdown 代码块中）
-            import re
-            # 方法1: 从 markdown 代码块中提取完整内容
-            code_block_match = re.search(r'```(?:json)?\s*(.*?)```', content, re.DOTALL)
-            if code_block_match:
-                json_str = code_block_match.group(1).strip()
+        # 提取 JSON
+        code_block = re.search(r'```(?:json)?\s*(.*?)```', content, re.DOTALL)
+        if code_block:
+            json_str = code_block.group(1).strip()
+        else:
+            first_brace = content.find("{")
+            last_brace = content.rfind("}")
+            if first_brace != -1 and last_brace > first_brace:
+                json_str = content[first_brace:last_brace + 1]
             else:
-                first_brace = content.find("{")
-                last_brace = content.rfind("}")
-                if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-                    json_str = content[first_brace:last_brace + 1]
-                else:
-                    json_str = content
+                json_str = content
 
-            # 解析并保存 JSON
+        # 清洗 LLM 常见的 JSON 格式问题：尾逗号
+        json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+
+        try:
+            parsed = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            print(f"  [Debug] 第 {call_index} 次调用 JSON 解析失败: {e}")
+            print(f"  [Debug] json_str 前 500 字符: {json_str[:500]}")
+            raise
+
+        # 兼容：如果返回的是 list 则取第一个
+        if isinstance(parsed, list):
+            if len(parsed) == 0:
+                raise ValueError("LLM 返回空列表")
+            parsed = parsed[0]
+        if not isinstance(parsed, dict):
+            raise ValueError(f"LLM 返回格式异常，期望 dict，得到 {type(parsed).__name__}")
+
+        return parsed
+
+    def _save_profile(self, profile: dict, index: int, profiles_dir: Path) -> Path:
+        """将单个画像立即写入磁盘，返回文件路径。"""
+        basic = profile.get("基本信息", {})
+        name = basic.get("姓名", "Unknown")
+        role = basic.get("职业", "Unknown")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_role = role.replace(" ", "_").replace("/", "_")
+        filename = f"user_profile_{index}_{safe_role}_{timestamp}.json"
+        filepath = profiles_dir / filename
+        filepath.write_text(
+            json.dumps(profile, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"  [Saved] #{index}: {name} ({role}) -> {filepath.name}")
+        return filepath
+
+    def generate_profiles(self, count: int, profiles_dir: Path) -> list[Path]:
+        """
+        并行生成 count 个用户画像。
+        每次 LLM 调用产出 1 个画像，用线程池并行调度。
+        每个画像解析成功后立即写入磁盘。
+        """
+        import threading
+
+        print(f"  [Plan] 总计 {count} 个画像，共 {count} 次 LLM 调用，并行度 {MAX_WORKERS}")
+
+        saved_files: list[Path] = []
+        failed_calls = 0
+        _lock = threading.Lock()
+
+        def _process_call(call_index: int):
+            """调用 LLM 并将画像即时落盘。"""
+            nonlocal failed_calls
             try:
-                profile = json.loads(json_str)
-                basic = profile.get("基本信息", {})
-                name = basic.get("姓名", "Unknown")
-                role = basic.get("职业", rand_occupation)
-                
-                print(f"  [OK] 生成成功: {name} ({role})")
-
-                # 生成成功后立马保存（原代码逻辑保留并优化文件命名）
-                if output_dir:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    safe_role = role.replace(' ', '_').replace('/', '_')
-                    filename = f"user_profile_{i+1}_{safe_role}_{timestamp}.json"
-                    filepath = output_dir / filename
-                    filepath.write_text(
-                        json.dumps(profile, ensure_ascii=False, indent=2),
-                        encoding="utf-8"
-                    )
+                profile = self._call_llm(call_index)
+                print(f"  [OK] 第 {call_index} 次调用解析成功")
+                filepath = self._save_profile(profile, call_index, profiles_dir)
+                with _lock:
                     saved_files.append(filepath)
-                    print(f"  [Save] 立即保存: {filename}")
+            except Exception as e:
+                with _lock:
+                    failed_calls += 1
+                print(f"  [Error] 第 {call_index} 次调用失败: {e}")
 
-                print(f"  [Wait] 休息 1 秒...")
-                time.sleep(1)
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+            futures = [
+                pool.submit(_process_call, i + 1)
+                for i in range(count)
+            ]
+            for f in as_completed(futures):
+                f.result()  # 触发异常打印（实际已在内部 catch）
 
-            except json.JSONDecodeError as e:
-                print(f"  [Error] 第 {i+1} 个画像解析失败: {e}")
-                print(f"  [Debug] 提取的 JSON: {json_str[:200]}..." if len(json_str) > 200 else f"  [Debug] 提取的 JSON: {json_str}")
-
-        print(f"\n  [Summary] 成功生成 {len(saved_files)}/{count} 个用户画像")
+        print(f"\n  [Summary] 成功生成 {len(saved_files)}/{count} 个用户画像（{failed_calls} 次调用失败）")
         return saved_files
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="生成多样化的用户画像（user profile）")
-    parser.add_argument("--output-dir", type=str, default=str(_PROFILES_DIR), help=f"输出目录（默认: {_PROFILES_DIR}）")
-    parser.add_argument("--count", type=int, default=10, help="生成的用户画像数量（默认: 10）")
-    return parser.parse_args()
-
-
 def main():
+    """主函数"""
     print("\n" + "=" * 60)
-    print("  User Profile 生成器 (加入随机正态引擎版)")
+    print("  User Profile 生成器（随机身份引擎版）")
     print("=" * 60)
 
-    args = parse_args()
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\n  输出目录: {output_dir}")
+    # 从配置读取输出目录和数量（相对路径基于 _PROJECT_ROOT）
+    _profiles_dir_str = _gen_cfg.get("profiles_dir")
+    if _profiles_dir_str:
+        p = Path(_profiles_dir_str)
+        profiles_dir = p if p.is_absolute() else _PROJECT_ROOT / p
+    else:
+        profiles_dir = _PROFILES_DIR
 
-    generator = ProfileGenerator(
-        api_key=LLM_API_KEY,
-        base_url=LLM_BASE_URL,
-        model=LLM_MODEL,
-    )
+    count = _gen_cfg.get("count") or 3
 
-    print("\n[步骤 1/2] 开始随机生成用户画像")
-    saved_files = generator.generate_profiles(args.count, output_dir)
+    # 创建输出目录
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\n  输出目录: {profiles_dir}")
+    print(f"  生成数量: {count}")
+
+    # 初始化生成器
+    generator = ProfileGenerator(model=LLM_MODEL)
+
+    # 并行生成并保存用户画像
+    print("\n[步骤 1/1] 并行生成并保存用户画像")
+    saved_files = generator.generate_profiles(count, profiles_dir)
 
     if not saved_files:
-        print("\n[Error] 生成用户画像失败，请检查 API 配置或网络连通性")
+        print("\n[Error] 生成用户画像失败，请检查 API 配置")
         return 1
 
+    # 完成
     print("\n" + "=" * 60)
     print("  完成")
     print("=" * 60)

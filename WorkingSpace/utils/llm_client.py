@@ -27,7 +27,7 @@ class LLMClient:
 
     # ── low-level ─────────────────────────────────────────────────────────────
     def chat(self, messages: list, temperature: float = 0.7,
-             json_mode: bool = False, max_tokens: int = 4096) -> str:
+             json_mode: bool = False, max_tokens: int = 16384) -> str:
         if self.backend == "anthropic":
             return self._ant_chat(messages, temperature, max_tokens)
         else:
@@ -66,7 +66,7 @@ class LLMClient:
                  system: str = "你是一个专业、严谨的AI助手。",
                  temperature: float = 0.7,
                  json_mode: bool = False,
-                 max_tokens: int = 4096) -> str:
+                 max_tokens: int = 16384) -> str:
         return self.chat(
             [{"role": "system", "content": system},
              {"role": "user",   "content": prompt}],
@@ -74,17 +74,70 @@ class LLMClient:
         )
 
     def generate_json(self, prompt: str,
-                      system: str = "你是一个专业的AI助手，只输出合法JSON。",
+                      system: str = "你是一个专业的AI助手，按照用户的格式要求输出合法JSON。并输出高质量的JSON内容。",
+                      max_retry = 3
                       ) -> dict:
         """Generate and parse JSON, with fallback extraction.
-        删除max_token=4096防止解码为空"""
-        raw = self.generate(prompt, system=system, 
-                            json_mode=True,
-                            )
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            m = re.search(r"\{[\s\S]+\}", raw)
-            if m:
-                return json.loads(m.group())
-            raise ValueError(f"Cannot parse JSON:\n{raw[:400]}")
+        删除max_token=4096防止解码为空或截断"""
+        for i_try in range(max_retry):
+            raw = self.generate(prompt, 
+                                system=system,
+                                json_mode=True,
+                                )
+            try:
+                if not isinstance(raw, str):
+                    raise TypeError(f'llm_client.py generate do not return a stiring: type={type(raw)}, {raw=}')
+                # 如果 LLM 受 prompt 模板 {{}} 转义影响，输出了双花括号，先剥掉外层
+                stripped = raw.strip()
+                if stripped.startswith('{{') and stripped.endswith('}}'):
+                    print(f'double braces found: {stripped[:50]}...{stripped[-50:]}')
+                    stripped = stripped[1:-1]  # 剥掉最外层的一对花括号
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                # 找到了tags(target_json_str存在)
+                # 但是json无法正常解析（target_json_str无法解析），才会进来这个分支
+                # 这里重点解决json无法解析的问题
+                cleaned = self._clean_json(raw)
+                try:
+                    return json.loads(cleaned)
+                except json.JSONDecodeError:
+                    pass
+                # 正则提取最外层 {...}
+                m = re.search(r"\{[\s\S]+\}", cleaned)
+                if m:
+                    try:
+                        return json.loads(m.group())
+                    except json.JSONDecodeError:
+                        pass
+                print(f"Cannot parse JSON, retry {i_try}/{max_retry-1}:\n{raw=}")
+                with open(r'D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260312\environments\error.json', 'a+', encoding='utf-8') as f:
+                    f.write(raw)
+            except Exception as e:
+                print(f'error parsing, {repr(e)}, {raw=}')
+        raise ValueError(f"Cannot parse JSON, failed {max_retry} times:\n{raw=}")
+
+    @staticmethod
+    def _clean_json(raw: str) -> str:
+        """尝试修复 LLM 输出的常见 JSON 格式错误。"""
+        s = raw
+        # 去除 // 行注释
+        s = re.sub(r'//[^\n]*', '', s)
+        # 去除 /* ... */ 块注释
+        s = re.sub(r'/\*[\s\S]*?\*/', '', s)
+        # 移除尾逗号（}, ] 或 }, } 之前的多余逗号）
+        s = re.sub(r',\s*([}\]])', r'\1', s)
+        # 尝试补全未闭合的括号
+        opens = s.count('{') - s.count('}')
+        if opens > 0:
+            s = s.rstrip()
+            # 如果末尾是逗号或普通值，先加上必要的闭合
+            s += '}' * opens
+        opens = s.count('[') - s.count(']')
+        if opens > 0:
+            s = s.rstrip().rstrip(',')
+            s += ']' * opens
+            # 补完数组后可能还需要补对象闭合
+            opens2 = s.count('{') - s.count('}')
+            if opens2 > 0:
+                s += '}' * opens2
+        return s

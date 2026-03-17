@@ -32,8 +32,8 @@ _api = _cfg.get("api_config", {})
 
 LLM_API_KEY  = os.getenv("LLM_API_KEY",  _api.get("LLM_API_KEY",  ""))
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", _api.get("LLM_BASE_URL", "https://api.openai.com/v1"))
-LLM_MODEL    = os.getenv("LLM_MODEL",    _api.get("LLM_MODEL",    "gpt-4o"))
-LLM_PROXY    = os.getenv("LLM_PROXY",    _api.get("LLM_PROXY",    None))
+LLM_MODEL    = os.getenv("LLM_MODEL",    _api.get("LLM_MODEL",      "gpt-4o"))
+LLM_PROXY    = os.getenv("LLM_PROXY",    _api.get("LLM_PROXY",      None))
 
 # ─── 全局 client（单例） ──────────────────────────────────────────────────────
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -94,3 +94,10 @@ def chat_with_retry(
                 print(f"  [LLM] 已重试 {max_retries} 次，全部失败")
 
     raise last_exc
+
+if __name__=='__main__':
+    res = chat_with_retry(
+        messages = [{"role": "user", "content": "hello"}],
+        model = 'gemini-3-flash-preview'
+    )
+    print(res)

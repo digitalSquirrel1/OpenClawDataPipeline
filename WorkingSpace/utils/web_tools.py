@@ -50,20 +50,26 @@ class WebTools:
     # Serper
     # ──────────────────────────────────────────────────────────────────────────
     def search(self, query: str, num: int = 5) -> list[dict]:
-        """Return list of {title, link, snippet}."""
-        try:
-            import http.client, json as _json
-            conn = http.client.HTTPSConnection("google.serper.dev", timeout=15)
-            conn.request(
-                "POST", "/search",
-                body=_json.dumps({"q": query, "num": num, "hl": "zh-cn", "gl": "cn"}),
-                headers={"X-API-KEY": self.serper_key, "Content-Type": "application/json"},
-            )
-            data = conn.getresponse().read()
-            return _json.loads(data).get("organic", [])
-        except Exception as e:
-            print(f"  [Serper Error] {e}")
-            return []
+        """Return list of {title, link, snippet}. 含重试（最多 3 次）。"""
+        import http.client, json as _json
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                conn = http.client.HTTPSConnection("google.serper.dev", timeout=15)
+                conn.request(
+                    "POST", "/search",
+                    body=_json.dumps({"q": query, "num": num, "hl": "zh-cn", "gl": "cn"}),
+                    headers={"X-API-KEY": self.serper_key, "Content-Type": "application/json"},
+                )
+                data = conn.getresponse().read()
+                return _json.loads(data).get("organic", [])
+            except Exception as e:
+                last_exc = e
+                if attempt < 3:
+                    time.sleep(1 * attempt)
+                    continue
+        print(f"  [Serper Error] {last_exc}")
+        return []
 
     def search_for_pdf(self, query: str, num: int = 6) -> list[str]:
         """

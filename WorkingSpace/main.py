@@ -8,13 +8,12 @@ user_simulator_agent — main entry point
   3. 生成 / 下载所有文件
   4. 输出 env_config.json
   5. 生成 user_agent.py
-  6. 打包为 zip
 
 核心 API：
   run_pipeline(user_profile_path, output_dir, profile_dir_name=None)
 """
 
-import os, sys, json, zipfile, time
+import os, sys, json, time
 from pathlib import Path
 from datetime import datetime
 
@@ -45,13 +44,6 @@ def _banner(msg: str) -> None:
     print(f"  {msg}")
     print("═" * 60)
 
-
-def _zip_dir(src_dir: Path, zip_path: Path) -> None:
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fp in src_dir.rglob("*"):
-            if fp.is_file():
-                zf.write(fp, fp.relative_to(src_dir.parent))
-    print(f"  → 打包完成：{zip_path}  ({zip_path.stat().st_size // 1024} KB)")
 
 
 def _sanitize_name(name: str) -> str:
@@ -121,7 +113,6 @@ def run_pipeline(
     from agents.profile_analyzer     import ProfileAnalyzer
     from agents.computer_spec_designer import ComputerSpecDesigner
     from agents.file_processor       import FileProcessor
-    from agents.user_query_generate  import UserQueryGenerator
 
     # ── 读取配置 ──────────────────────────────────────────────────────────
     cfg      = load_config()
@@ -149,7 +140,7 @@ def run_pipeline(
     print(f"\n[读取] {user_profile_path} ({len(profile_text)} chars)")
 
     # ── Step 1：分析用户画像 ────────────────────────────────────────────────
-    _banner("Step 1 / 4  分析用户画像")
+    _banner("Step 1 / 3  分析用户画像")
     analyzer = ProfileAnalyzer(llm)
     profile  = analyzer.analyze(profile_text)
 
@@ -159,19 +150,30 @@ def run_pipeline(
             f"{profile.get('name', 'user')}_{profile.get('role', 'unknown')}"
         )
 
-    # ── Step 2：设计电脑环境规格 ────────────────────────────────────────────
-    _banner("Step 2 / 4  设计电脑环境")
-    designer = ComputerSpecDesigner(llm)
-    spec     = designer.design(profile)
-
     # ── 创建输出目录 ────────────────────────────────────────────────────────
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 持久化 Step 1 结果，供后续断点续跑使用
+    (out_dir / "profile_analyzed.json").write_text(
+        json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # ── Step 2：设计电脑环境规格 ────────────────────────────────────────────
+    _banner("Step 2 / 3  设计电脑环境")
+    designer = ComputerSpecDesigner(llm)
+    spec     = designer.design(profile)
+
+    # 持久化 Step 2 结果，供后续断点续跑使用
+    (out_dir / "spec.json").write_text(
+        json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     profile_dir = out_dir / profile_dir_name
     profile_dir.mkdir(exist_ok=True)
 
     # ── Step 3：生成文件系统 ─────────────────────────────────────────────────
-    _banner("Step 3 / 4  生成文件 & 目录")
+    _banner("Step 3 / 3  生成文件 & 目录")
     processor = FileProcessor(llm, web, str(out_dir), max_workers=max_workers)
     created   = processor.process(spec, profile, profile_dir_name=profile_dir_name)
 
@@ -187,27 +189,17 @@ def run_pipeline(
     readme = _build_readme(profile, spec, created)
     (profile_dir / "README.md").write_text(readme, encoding="utf-8")
 
-    # ── Step 4：生成 user_queries.json ──────────────────────────────────────
-    _banner("Step 4 / 4  生成 user_queries.json")
-    query_cfg      = cfg.get("user_query_generator_config", {})
-    generator      = UserQueryGenerator(llm)
-    queries_result = generator.generate(
-        profile,
-        spec,
-        scenario=query_cfg.get("scenario"),
-        seeds=query_cfg.get("seeds"),
+    # ── 写入 pipeline_meta.json（记录来源画像路径，供 query_generate.py 使用） ──
+    pipeline_meta = {
+        "source_profile_path": str(user_profile_path.resolve()),
+        "env_dir": str(out_dir.resolve()),
+        "profile_dir_name": profile_dir_name,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    (out_dir / "pipeline_meta.json").write_text(
+        json.dumps(pipeline_meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    if queries_result.get("error"):
-        raise RuntimeError(f"UserQueryGenerator 失败: {queries_result['error']}")
-    queries_path = out_dir / "user_queries.json"
-    queries_path.write_text(
-        json.dumps(queries_result, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"  → user_queries.json 已写入 ({len(queries_result.get('queries', []))} 条 query)")
-
-    # ── 打包 zip ─────────────────────────────────────────────────────────────
-    zip_path = out_dir / f"{profile_dir_name}.zip"
-    _zip_dir(profile_dir, zip_path)
+    print(f"\n  → pipeline_meta.json 已写入")
 
     # ── 完成汇总 ─────────────────────────────────────────────────────────────
     elapsed = time.time() - t0
@@ -215,9 +207,11 @@ def run_pipeline(
     print(f"\n  模拟角色    : {profile.get('name')}（{profile.get('role')}）")
     print(f"  创建文件数  : {len(created)}")
     print(f"  耗时        : {elapsed:.1f} 秒\n")
-    print(f"  📁 {profile_dir_name}.zip    : {zip_path}")
-    print(f"  📋 user_queries.json : {queries_path}")
+    print(f"  📁 输出目录 : {out_dir}")
     print()
+
+    # ── 标记任务完成 ───────────────────────────────────────────────────────
+    (out_dir / "task_done.txt").write_text("", encoding="utf-8")
 
     return {
         "profile_dir_name": profile_dir_name,

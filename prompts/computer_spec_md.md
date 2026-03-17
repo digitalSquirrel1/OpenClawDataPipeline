@@ -6,7 +6,7 @@
 
 请为该用户设计 {file_count}个 正在撰写的深度报告草稿和分析笔记文件（type=generated，format=md）。
 
-输出 JSON（只有files数组）：
+请直接输出有效的JSON，标准格式如下（只有files数组）：
 {{
   "files": [
     {{

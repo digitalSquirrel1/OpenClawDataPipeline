@@ -13,7 +13,7 @@
   C/Users/{username}/Downloads/
   ...
 
-输出 JSON：
+请直接输出有效的JSON，标准格式如下：
 {{
   "directories": [
     "D/研究资料/车企财报/比亚迪/2022",

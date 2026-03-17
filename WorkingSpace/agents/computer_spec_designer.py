@@ -63,7 +63,6 @@ class ComputerSpecDesigner:
         print("[Step 1] 设计目录结构...")
         dirs_spec = self.llm.generate_json(
             PROMPT_DIRS.format(profile_json=profile_json, username=username),
-            # max_tokens=3000
         )
         directories = dirs_spec.get("directories", [])
         print(f"  -> {len(directories)} 个目录")
@@ -73,7 +72,6 @@ class ComputerSpecDesigner:
         print("[Step 2] 确定各类文件数量...")
         counts_spec = self.llm.generate_json(
             PROMPT_FILE_COUNTS.format(profile_json=profile_json),
-            # max_tokens=2000
         )
         file_counts = counts_spec.get("file_counts", {})
         print(f"  -> 文件数量配置: {file_counts}")
@@ -107,7 +105,6 @@ class ComputerSpecDesigner:
                 )
                 result = self.llm.generate_json(
                     prompt, 
-                    # max_tokens=max_tok
                 )
                 files = result.get("files", [])
                 print(f"  -> [{cat_name}] +{len(files)} 个文件")
@@ -151,7 +148,6 @@ class ComputerSpecDesigner:
         try:
             env_config = self.llm.generate_json(
                 prompt_env, 
-                # max_tokens=4096
             )
         except Exception as e:
             print(f"  [!] env_config 生成失败: {e}")

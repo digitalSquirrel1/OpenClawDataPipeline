@@ -43,7 +43,7 @@ Step 3 — File Processor  (parallel edition)
 import csv, io, json, os, time, re, subprocess, tempfile
 import threading
 import concurrent.futures
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from utils.llm_client import LLMClient
 from utils.web_tools   import WebTools
 
@@ -93,6 +93,26 @@ class FileProcessor:
         with self._print_lock:
             print(msg)
 
+    # ── 路径消毒：防止 LLM 返回 Windows 绝对路径 ─────────────────────────────
+    @staticmethod
+    def _sanitize_path(p: str) -> str:
+        """将 LLM 可能返回的 Windows 绝对路径转为相对路径。
+
+        例：
+          C:\\Users\\foo\\Desktop  →  C/Users/foo/Desktop
+          C:/Users/foo/Desktop    →  C/Users/foo/Desktop
+          \\Users\\foo            →  Users/foo
+        """
+        if not p:
+            return p
+        # 统一为正斜杠
+        p = p.replace("\\", "/")
+        # 去掉盘符冒号  C:/ → C/
+        p = re.sub(r"^([A-Za-z]):/", r"\1/", p)
+        # 去掉前导斜杠
+        p = p.lstrip("/")
+        return p
+
     # ── 双重下载辅助：requests → curl -L ──────────────────────────────────────
     def _download_with_curl(self, url: str, save_path: str, timeout: int = 30) -> bool:
         """先用 download_binary，失败后用 curl -L 重试。"""
@@ -137,13 +157,14 @@ class FileProcessor:
 
     # ── rate-limited wrappers ──────────────────────────────────────────────
     def _llm_generate(self, prompt, system=GEN_SYSTEM,
-                      temperature=0.7, max_tokens=3000) -> str:
+                      temperature=0.7, max_tokens=16384) -> str:
         with self._llm_sem:
             return self.llm.generate(prompt, system=system,
                                      temperature=temperature,
-                                     max_tokens=max_tokens)
+                                     max_tokens=max_tokens
+                                     )
 
-    def _llm_generate_json(self, prompt, max_tokens=3000) -> dict:
+    def _llm_generate_json(self, prompt) -> dict:
         with self._llm_sem:
             return self.llm.generate_json(prompt)
 
@@ -266,6 +287,7 @@ class FileProcessor:
 
         # 创建所有目录（单线程，避免竞争）
         for d in spec.get("directories", []):
+            d = self._sanitize_path(d)
             (base / d).mkdir(parents=True, exist_ok=True)
 
         print(f"[Step 3] 并行处理 {total} 个文件（max_workers={self.max_workers}）...")
@@ -277,7 +299,7 @@ class FileProcessor:
 
         def process_one(idx_fspec):
             i, fspec = idx_fspec
-            path     = fspec.get("path", "")
+            path     = self._sanitize_path(fspec.get("path", ""))
             ftype    = fspec.get("type", "generated")
             sub_type = fspec.get("sub_type", "")
             tag      = f"{ftype[:3].upper()}/{sub_type}" if sub_type else ftype[:3].upper()
@@ -472,7 +494,7 @@ class FileProcessor:
         ctx     = f"你的角色：{profile.get('role')}，单位：{profile.get('company')}\n\n"
         content = self._llm_generate(
             ctx + prompt + "\n\n请直接输出文件正文，不要附加任何说明。",
-            temperature=0.8, max_tokens=3000
+            temperature=0.8, 
         )
         path.write_text(content, encoding="utf-8")
         self._log(f"    [OK] 文本 {len(content)} chars -> {path.name}")
@@ -482,7 +504,7 @@ class FileProcessor:
         ctx = f"用户角色：{profile.get('role')}，单位：{profile.get('company')}\n\n"
         raw = self._llm_generate(
             ctx + prompt + "\n\n只输出CSV内容（第一行列名），不要使用markdown代码块，不要附加任何说明。",
-            temperature=0.3, max_tokens=3000
+            temperature=0.3, 
         )
         raw = _strip_fences(raw)
         path.write_text(raw, encoding="utf-8-sig")
@@ -514,7 +536,7 @@ class FileProcessor:
         ctx     = f"用户角色：{profile.get('role')}，单位：{profile.get('company')}\n\n"
         content = self._llm_generate(
             ctx + prompt + "\n\n请以Markdown格式输出文档正文（标题用#，段落分明），不要附加任何说明。",
-            temperature=0.75, max_tokens=3000
+            temperature=0.75, 
         )
         try:
             from docx import Document
@@ -547,7 +569,7 @@ class FileProcessor:
         content = self._llm_generate(
             ctx + prompt +
             "\n\n请生成完整的PPT演讲稿大纲（逐页列出页码、标题、要点、备注），专业风格，不少于15页。",
-            temperature=0.75, max_tokens=3000
+            temperature=0.75, 
         )
         txt_path = path.with_suffix(".txt")
         txt_path.write_text(content, encoding="utf-8")
@@ -557,7 +579,7 @@ class FileProcessor:
     def _gen_code(self, prompt, path, profile):
         code = self._llm_generate(
             prompt + "\n\n只输出Python代码，不要有任何额外说明。",
-            temperature=0.4, max_tokens=2000
+            temperature=0.4, 
         )
         path.write_text(_strip_fences(code), encoding="utf-8")
         self._log(f"    [OK] Python {len(code)} chars -> {path.name}")
