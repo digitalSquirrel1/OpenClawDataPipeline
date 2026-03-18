@@ -19,7 +19,8 @@ class LLMClient:
         if backend == "anthropic":
             import anthropic
             self._ant = anthropic.Anthropic(
-                api_key=api_key or os.getenv("ANTHROPIC_API_KEY", "")
+                api_key=api_key or os.getenv("ANTHROPIC_API_KEY", ""),
+                timeout=60.0,
             )
         else:
             self._ant = None
@@ -38,7 +39,8 @@ class LLMClient:
             kwargs["response_format"] = {"type": "json_object"}
         return chat_with_retry(messages, model=self.model, **kwargs)
 
-    def _ant_chat(self, messages, temperature, max_tokens):
+    def _ant_chat(self, messages, temperature, max_tokens,
+                  max_retries: int = 5, retry_delay: float = 3.0):
         sys_msg   = next((m["content"] for m in messages if m["role"] == "system"), "")
         user_msgs = [m for m in messages if m["role"] != "system"]
         kwargs    = dict(model=self.model, max_tokens=max_tokens,
@@ -46,17 +48,17 @@ class LLMClient:
         if sys_msg:
             kwargs["system"] = sys_msg
         last_exc: Exception = None
-        for attempt in range(1, 6):
+        for attempt in range(1, max_retries + 1):
             try:
                 resp = self._ant.messages.create(**kwargs)
                 return resp.content[0].text
             except Exception as exc:
                 last_exc = exc
-                if attempt < 5:
-                    print(f"  [Anthropic retry {attempt}/5] {type(exc).__name__}: {exc}")
-                    time.sleep(3)
+                if attempt < max_retries:
+                    print(f"  [Anthropic retry {attempt}/{max_retries}] {type(exc).__name__}: {exc}")
+                    time.sleep(retry_delay)
                 else:
-                    print("  [Anthropic] 已重试 5 次，全部失败")
+                    print(f"  [Anthropic] 已重试 {max_retries} 次，全部失败")
         raise last_exc
 
     # ── convenience ───────────────────────────────────────────────────────────

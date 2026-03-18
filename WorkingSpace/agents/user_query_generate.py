@@ -24,7 +24,9 @@ from config.config_loader import load_config, get_prompt
 from utils.llm_client import LLMClient
 
 _cfg = load_config().get("user_query_generator_config", {})
-_PROMPT_TMPL_PATH = _cfg.get("PROMPT_TMPL", "prompts/user_query_generate_prompt.md")
+_PROMPT_TMPL_PATH    = _cfg.get("PROMPT_TMPL", "prompts/user_query_generate_prompt.md")
+_DEFAULT_SCENARIO    = _cfg.get("scenario", "生活相关")
+_DEFAULT_SEEDS: list = _cfg.get("seeds", [])
 
 
 class UserQueryGenerator:
@@ -65,23 +67,47 @@ class UserQueryGenerator:
         
         return "\n".join(samples) if samples else "  无文件样例"
 
-    def generate(self, profile: dict, spec: dict) -> dict:
-        """生成用户query"""
+    def generate(
+        self,
+        profile: dict,
+        spec: dict,
+        scenario: str = None,
+        seeds: list = None,
+    ) -> dict:
+        """生成用户query
+
+        Args:
+            profile:   用户画像
+            spec:      电脑环境规格
+            scenario:  场景限定，默认 "生活相关"
+            seeds:     提示种子列表，引导生成方向，如 ["运动", "健康"]
+        """
         profile_json = json.dumps(profile, ensure_ascii=False, indent=2)
         directories = spec.get("directories", [])
         files = spec.get("files", [])
-        
-        print("[Step 4] 生成用户日常查询...")
-        
+
+        _scenario = scenario if scenario is not None else _DEFAULT_SCENARIO
+        _seeds    = seeds    if seeds    is not None else _DEFAULT_SEEDS
+
+        print(f"[Step 4] 生成用户日常查询（场景：{_scenario}）...")
+
+        # 构建 seeds 提示段（无种子时留空）
+        if _seeds:
+            seeds_section = f"\n提示种子（query应尽量覆盖这些方向）：{'、'.join(_seeds)}"
+        else:
+            seeds_section = ""
+
         # 构建prompt所需的信息
         file_types_summary = self._build_file_types_summary(spec)
         file_samples = self._build_file_samples(spec)
-        
+
         prompt = get_prompt(_PROMPT_TMPL_PATH).format(
             profile_json=profile_json,
             dir_count=len(directories),
             file_types_summary=file_types_summary,
             file_samples=file_samples,
+            scenario=_scenario,
+            seeds_section=seeds_section,
         )
         
         try:
