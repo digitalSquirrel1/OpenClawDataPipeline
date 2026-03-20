@@ -22,7 +22,7 @@ pipeline_config:           # main.py 运行参数
 generate_user_profile_config: # 生成user profile
   PROFILE_GENERATION_PROMPT: "prompts/profile_generation_prompt.md"
   profiles_dir: "Outputs/260316/profiles"   # null → defaults to Outputs/profiles/
-  count: 5
+  count: 100
 
 batch_generate_config: # 根据user_profile生成environment
   profiles_dir: "Outputs/260316/profiles"  # null → defaults to Outputs/profiles/
@@ -60,6 +60,9 @@ query_gen_with_topic_skill_profile_config:
   output_dir: "Outputs/260316/queries_with_skills_noenv" # 输出目录（相对于项目根目录）
   num_user_per_topic:  null                    # null代表profile_dir下面所有的都读，每个 topic 最多使用多少个 profile，null 表示全部使用
   queries_per_combination: 5                   # 每组 (topic, profile) 生成的 query 数量
+  num_calls: 3                                 # 每组拆分为多少次 LLM 调用（多次调用降低同批次相似性）
+  detailed_query_ratio: 0.3                    # 每次调用追加「详细型 query」要求的概率（0~1）
+  simple_query_ratio: 0.1                      # 每次调用追加「简洁型 query」要求的概率（0~1）
   skip_existing: true                          # 跳过已生成的 profile 结果
   PROMPT_TMPL: "prompts/query_gen_with_topic_skill_profile_prompt.md"
   PROMPT_TMPL_ENV: "prompts/query_gen_with_topic_skill_profile_env_prompt.md"
