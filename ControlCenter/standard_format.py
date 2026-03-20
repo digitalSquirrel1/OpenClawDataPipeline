@@ -220,7 +220,7 @@ def _long_path(p: Path) -> str:
     """Windows 长路径前缀，解决 >260 字符路径的 OSError。"""
     s = str(p)
     if sys.platform == "win32" and not s.startswith("\\\\?\\"):
-        s = "\\\\?\\" + os.path.abspath(s)
+        s = "\\\\?\\" + str(Path(s).resolve())
     return s
 
 
@@ -271,8 +271,17 @@ def run(
             total = len(all_files)
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, (file, arcname) in enumerate(all_files, 1):
-                    with open(_long_path(file), "rb") as fh:
-                        zf.writestr(arcname, fh.read())
+                    try:
+                        with open(_long_path(file), "rb") as fh:
+                            zf.writestr(arcname, fh.read())
+                    except OSError as e:
+                        # \\?\前缀对路径格式要求严格，回退到 pathlib 原生读取
+                        try:
+                            zf.writestr(arcname, file.read_bytes())
+                        except OSError:
+                            raise OSError(
+                                f"{e} — 文件无法读取，路径 repr: {file!r}"
+                            ) from e
                     if i % 50 == 0 or i == total:
                         print(f"\r  打包进度: {i}/{total} ({i*100//total}%)", end="", flush=True)
             print(f"\n已打包 zip: {zip_path}  ({len(dirs_to_pack)} 个环境目录, {total} 个文件)")
@@ -289,8 +298,16 @@ def run(
         total = len(all_files)
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for i, (file, arcname) in enumerate(all_files, 1):
-                with open(_long_path(file), "rb") as fh:
-                    zf.writestr(arcname, fh.read())
+                try:
+                    with open(_long_path(file), "rb") as fh:
+                        zf.writestr(arcname, fh.read())
+                except OSError as e:
+                    try:
+                        zf.writestr(arcname, file.read_bytes())
+                    except OSError:
+                        raise OSError(
+                            f"{e} — 文件无法读取，路径 repr: {file!r}"
+                        ) from e
                 if i % 50 == 0 or i == total:
                     print(f"\r  打包进度: {i}/{total} ({i*100//total}%)", end="", flush=True)
         print(f"\n已打包 zip: {zip_path}  ({total} 个文件)")
