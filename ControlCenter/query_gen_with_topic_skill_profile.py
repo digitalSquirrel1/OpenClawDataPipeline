@@ -266,6 +266,7 @@ def load_profiles_from_envs(
         if not source_profile_path:
             print(f"  [Warning] pipeline_meta.json 缺少 source_profile_path: {meta_path}")
             continue
+        
 
         source_profile_path = Path(source_profile_path).resolve()
 
@@ -304,15 +305,17 @@ def generate_queries(
     prompt_tmpl: str,
     n: int = 5,
     env_info: dict | None = None,
+    use_match_skills: bool = True,
 ) -> list[dict]:
     """调用 LLM 为一组 (topic, skills, profile) 生成 queries。
 
     Args:
         env_info: 环境信息字典（含 dir_count, file_types_summary, file_samples），
                   为 None 时使用不含环境信息的 prompt。
+        use_match_skills: False 时在 prompt 末尾追加约束，禁止生成依赖 skills 的 query。
 
     Returns:
-        query 字典列表，每个元素含 "queries"(str) 和 "required_skills"(list[str])
+        query 字典列表，每个元素含 "queries"(str)、"required_skills"(list[str]) 和 "required_files"(list[str])
 
     Raises:
         ValueError: LLM 返回无法解析的 JSON
@@ -334,6 +337,13 @@ def generate_queries(
 
     prompt = prompt_tmpl.format(**fmt_kwargs)
 
+    if not use_match_skills:
+        prompt += (
+            "\n\n**注意：本次未提供任何 skills 列表，"
+            "所有 query 的 `required_skills` 必须填入空列表，"
+            "禁止生成任何依赖 skills 才能解决的 query。**"
+        )
+
     result = llm.generate_json(prompt)
     if isinstance(result, list):
         queries = result
@@ -342,16 +352,17 @@ def generate_queries(
     if not isinstance(queries, list):
         raise ValueError(f"LLM 返回的 queries 不是数组: {type(queries)}")
 
-    # 标准化：确保每个元素都是 {"queries": str, "required_skills": list} 格式
+    # 标准化：确保每个元素都是 {"queries": str, "required_skills": list, "required_files": list} 格式
     normalized = []
     for item in queries:
         if isinstance(item, str):
             # 兼容旧格式：纯字符串
-            normalized.append({"queries": item, "required_skills": []})
+            normalized.append({"queries": item, "required_skills": [], "required_files": []})
         elif isinstance(item, dict):
             normalized.append({
                 "queries": item.get("queries", ""),
                 "required_skills": item.get("required_skills", []),
+                "required_files": item.get("required_files", []),
             })
         else:
             raise ValueError(f"LLM 返回的 query 元素格式异常: {type(item)}")
@@ -403,6 +414,7 @@ def _run_task(
     file_lock: threading.Lock,
     env_info: dict | None = None,
     system_type: str | None = None,
+    use_match_skills: bool = True,
 ) -> dict:
     """单个 task: 调用 LLM 生成 queries 并立即追加保存。
 
@@ -418,6 +430,7 @@ def _run_task(
             prompt_tmpl=prompt_tmpl,
             n=n_queries,
             env_info=env_info,
+            use_match_skills=use_match_skills,
         )
         record = {
             "topic": topic,
@@ -609,6 +622,10 @@ def main():
     max_workers = int(os.getenv("MAX_LLM_CALLS", pipeline_cfg.get("MAX_LLM_CALLS", 4)))
     print(f"  并发度 (MAX_LLM_CALLS): {max_workers}")
 
+    # ── 读取 use_match_skills ────────────────────────────────────────────────
+    use_match_skills = gen_cfg.get("use_match_skills", True)
+    print(f"  use_match_skills: {use_match_skills}")
+
     # ── 组装所有 (topic, profile) 排列组合为 task 列表 ───────────────────────
     # 每个 task 独立查询 skills（利用查询接口的随机性）
     # 每个 profile 的输出文件用一把锁保护并发写入
@@ -667,10 +684,13 @@ def main():
                 system_type = None
 
             # 为此 task 实时查询 skills（每次调用有随机性）
-            skills = search_skills_by_topic(topic)
-            if not skills:
-                print(f"  [SKIP] topic「{topic}」无匹配 skills")
-                continue
+            if use_match_skills:
+                skills = search_skills_by_topic(topic)
+                if not skills:
+                    print(f"  [SKIP] topic「{topic}」无匹配 skills")
+                    continue
+            else:
+                skills = []
 
             if out_path_str not in file_locks:
                 file_locks[out_path_str] = threading.Lock()
@@ -685,6 +705,7 @@ def main():
                 "env_info": env_info,
                 "prompt_tmpl": task_prompt,
                 "system_type": system_type,
+                "use_match_skills": use_match_skills,
             })
 
     print(f"  共组装 {len(tasks)} 个 task（topic × profile 排列组合）\n")
@@ -711,6 +732,7 @@ def main():
                 file_lock=t["file_lock"],
                 env_info=t["env_info"],
                 system_type=t["system_type"],
+                use_match_skills=t["use_match_skills"],
             ): t
             for t in tasks
         }

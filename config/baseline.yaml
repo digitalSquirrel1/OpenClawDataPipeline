@@ -61,6 +61,7 @@ query_gen_with_topic_skill_profile_config:
   num_user_per_topic:  null                    # null代表profile_dir下面所有的都读，每个 topic 最多使用多少个 profile，null 表示全部使用
   queries_per_combination: 5                   # 每组 (topic, profile) 生成的 query 数量
   skip_existing: true                          # 跳过已生成的 profile 结果
+  use_match_skills: true                       # true → 用 topic 搜索 skills；false → 不搜索，传入空 skills 列表
   PROMPT_TMPL: "prompts/query_gen_with_topic_skill_profile_prompt.md"
   PROMPT_TMPL_ENV: "prompts/query_gen_with_topic_skill_profile_env_prompt.md"
   PROMPT_TMPL_ENV_LINUX: "prompts/query_gen_with_topic_skill_profile_env_linux_prompt.md"
