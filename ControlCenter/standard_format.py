@@ -46,28 +46,32 @@ def _resolve(rel_or_none: str | None, default_rel: str) -> Path:
     return p if p.is_absolute() else (_PROJECT_ROOT / p).resolve()
 
 
-def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]]]:
-    """将 queries 列表拆分为纯字符串列表和对应的 required_skills 列表。
+def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[list[str]]]:
+    """将 queries 列表拆分为纯字符串列表和对应的 required_skills、required_files 列表。
 
     兼容旧格式（纯字符串列表）和新格式（字典列表）。
 
     Returns:
-        (query_strings, required_skills_list)
+        (query_strings, required_skills_list, required_files_list)
         - query_strings: list[str]，每个 query 的文本
         - required_skills_list: list[list[str]]，与 query_strings 一一对应的技能列表
+        - required_files_list: list[list[str]]，与 query_strings 一一对应的文件列表
     """
     query_strings = []
     required_skills_list = []
+    required_files_list = []
     for item in queries:
         if isinstance(item, str):
             query_strings.append(item)
             required_skills_list.append([])
+            required_files_list.append([])
         elif isinstance(item, dict):
             query_strings.append(item.get("queries", ""))
             required_skills_list.append(item.get("required_skills", []))
+            required_files_list.append(item.get("required_files", []))
         else:
             raise ValueError(f"queries 元素格式异常: {type(item)} — {item}")
-    return query_strings, required_skills_list
+    return query_strings, required_skills_list, required_files_list
 
 
 def _sanitize_folder_name(name: str) -> str:
@@ -146,8 +150,8 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel.replace("\\", "/"))
 
-            # 拆分 queries 和 required_skills
-            query_strings, required_skills_list = _normalize_queries(queries)
+            # 拆分 queries 和 required_skills / required_files
+            query_strings, required_skills_list, required_files_list = _normalize_queries(queries)
 
             all_queries.append({
                 "topic": topic,
@@ -155,6 +159,7 @@ def process_single_json(
                 "queries": query_strings,
                 "skills": skill_rel_paths,
                 "required_skills": required_skills_list,
+                "required_files": required_files_list,
             })
 
         with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
@@ -198,8 +203,8 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel.replace("\\", "/"))
 
-            # 拆分 queries 和 required_skills
-            query_strings, required_skills_list = _normalize_queries(queries)
+            # 拆分 queries 和 required_skills / required_files
+            query_strings, required_skills_list, required_files_list = _normalize_queries(queries)
 
             user_queries = [{
                 "topic": topic,
@@ -207,6 +212,7 @@ def process_single_json(
                 "queries": query_strings,
                 "skills": skill_rel_paths,
                 "required_skills": required_skills_list,
+                "required_files": required_files_list,
             }]
             with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
                 json.dump(user_queries, f, ensure_ascii=False, indent=2)
@@ -220,7 +226,7 @@ def _long_path(p: Path) -> str:
     """Windows 长路径前缀，解决 >260 字符路径的 OSError。"""
     s = str(p)
     if sys.platform == "win32" and not s.startswith("\\\\?\\"):
-        s = "\\\\?\\" + os.path.abspath(s)
+        s = "\\\\?\\" + str(Path(s).resolve())
     return s
 
 
@@ -271,8 +277,17 @@ def run(
             total = len(all_files)
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, (file, arcname) in enumerate(all_files, 1):
-                    with open(_long_path(file), "rb") as fh:
-                        zf.writestr(arcname, fh.read())
+                    try:
+                        with open(_long_path(file), "rb") as fh:
+                            zf.writestr(arcname, fh.read())
+                    except OSError as e:
+                        # \\?\前缀对路径格式要求严格，回退到 pathlib 原生读取
+                        try:
+                            zf.writestr(arcname, file.read_bytes())
+                        except OSError:
+                            raise OSError(
+                                f"{e} — 文件无法读取，路径 repr: {file!r}"
+                            ) from e
                     if i % 50 == 0 or i == total:
                         print(f"\r  打包进度: {i}/{total} ({i*100//total}%)", end="", flush=True)
             print(f"\n已打包 zip: {zip_path}  ({len(dirs_to_pack)} 个环境目录, {total} 个文件)")
@@ -289,8 +304,16 @@ def run(
         total = len(all_files)
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for i, (file, arcname) in enumerate(all_files, 1):
-                with open(_long_path(file), "rb") as fh:
-                    zf.writestr(arcname, fh.read())
+                try:
+                    with open(_long_path(file), "rb") as fh:
+                        zf.writestr(arcname, fh.read())
+                except OSError as e:
+                    try:
+                        zf.writestr(arcname, file.read_bytes())
+                    except OSError:
+                        raise OSError(
+                            f"{e} — 文件无法读取，路径 repr: {file!r}"
+                        ) from e
                 if i % 50 == 0 or i == total:
                     print(f"\r  打包进度: {i}/{total} ({i*100//total}%)", end="", flush=True)
         print(f"\n已打包 zip: {zip_path}  ({total} 个文件)")

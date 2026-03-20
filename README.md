@@ -216,8 +216,10 @@ Outputs/environments/
 
 根据 topic 列表、skills 库和用户画像的排列组合，调用 LLM 为每组组合生成多条用户查询（query）。支持两种模式：
 
-- **纯模式**（默认）：仅使用 topic + skills + profile 生成 query
-- **环境模式**（指定 `--envs-dir`）：额外读取用户模拟环境的文件结构摘要，使 query 与用户实际文件环境相关
+- **配置query_gen_with_topic_skill_profile_config指导**
+`envs_dir`: 设置为null则生成的query不依赖文件环境；设置为有效路径则依赖文件环境。
+`use_match_skills`: True则生成的query会依赖skills，False则不依赖
+`PROMPT_TMPL/PROMPT_TMPL_ENV/PROMPT_TMPL_ENV_LINUX`: 提示词后缀是_nointernet的，表示生成的query不依赖网络环境。建议不依赖网络环境的提示词搭配“envs_dir存在”和"use_match_skills=False"使用。
 
 **运行方式：**
 

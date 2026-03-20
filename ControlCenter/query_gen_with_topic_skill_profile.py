@@ -266,6 +266,7 @@ def load_profiles_from_envs(
         if not source_profile_path:
             print(f"  [Warning] pipeline_meta.json 缺少 source_profile_path: {meta_path}")
             continue
+        
 
         source_profile_path = Path(source_profile_path).resolve()
 
@@ -354,7 +355,7 @@ def generate_queries(
         simple_query_ratio: 每次调用追加「简洁型」要求的概率。
 
     Returns:
-        query 字典列表，每个元素含 "queries"(str) 和 "required_skills"(list[str])
+        query 字典列表，每个元素含 "queries"(str)、"required_skills"(list[str]) 和 "required_files"(list[str])
 
     Raises:
         ValueError: LLM 返回无法解析的 JSON
@@ -686,6 +687,10 @@ def main():
     print(f"  详细型 query 比例 (detailed_query_ratio): {detailed_query_ratio}")
     print(f"  简洁型 query 比例 (simple_query_ratio): {simple_query_ratio}")
 
+    # ── 读取 use_match_skills ────────────────────────────────────────────────
+    use_match_skills = gen_cfg.get("use_match_skills", True)
+    print(f"  use_match_skills: {use_match_skills}")
+
     # ── 组装所有 (topic, profile) 排列组合为 task 列表 ───────────────────────
     # 每个 task 独立查询 skills（利用查询接口的随机性）
     # 每个 profile 的输出文件用一把锁保护并发写入
@@ -744,10 +749,13 @@ def main():
                 system_type = None
 
             # 为此 task 实时查询 skills（每次调用有随机性）
-            skills = search_skills_by_topic(topic)
-            if not skills:
-                print(f"  [SKIP] topic「{topic}」无匹配 skills")
-                continue
+            if use_match_skills:
+                skills = search_skills_by_topic(topic)
+                if not skills:
+                    print(f"  [SKIP] topic「{topic}」无匹配 skills")
+                    continue
+            else:
+                skills = []
 
             if out_path_str not in file_locks:
                 file_locks[out_path_str] = threading.Lock()
@@ -762,6 +770,7 @@ def main():
                 "env_info": env_info,
                 "prompt_tmpl": task_prompt,
                 "system_type": system_type,
+                "use_match_skills": use_match_skills,
             })
 
     print(f"  共组装 {len(tasks)} 个 task（topic × profile 排列组合）\n")

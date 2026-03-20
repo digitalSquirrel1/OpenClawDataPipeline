@@ -64,6 +64,7 @@ query_gen_with_topic_skill_profile_config:
   detailed_query_ratio: 0.3                    # 每次调用追加「详细型 query」要求的概率（0~1）
   simple_query_ratio: 0.1                      # 每次调用追加「简洁型 query」要求的概率（0~1）
   skip_existing: true                          # 跳过已生成的 profile 结果
+  use_match_skills: true                       # true → 用 topic 搜索 skills；false → 不搜索，传入空 skills 列表
   PROMPT_TMPL: "prompts/query_gen_with_topic_skill_profile_prompt.md"
   PROMPT_TMPL_ENV: "prompts/query_gen_with_topic_skill_profile_env_prompt.md"
   PROMPT_TMPL_ENV_LINUX: "prompts/query_gen_with_topic_skill_profile_env_linux_prompt.md"
