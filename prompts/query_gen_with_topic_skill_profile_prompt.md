@@ -22,14 +22,14 @@
 - **严禁依赖电脑的本地文件，不可以要求读取本地文件**：query不可以对用户本地的文件或历史记录有依赖，例如，禁止依赖用户文件系统的文件、邮箱历史、对话历史、coding项目的文件等。
 - **允许有一定比例的query要求写入本地文件**，建议你生成的每组queries里面有40%需要写入本地文件，60%不需要写入。
 - **禁止依赖多模信息**：query不要强制性的依赖图片、音频或视频信息。也禁止在query中要求生成多模信息（不要生成图片或者视频，但使用python等画图之后保存是可以的）。
-- **依赖skills，鼓励query依赖多个skills**：非常鼓励你给出一些依赖skills才能解决的query。（1）鼓励你优先思考如何将多个skills有逻辑地、自然地串联起来，根据串联之后的用途构思你的query；如果实在无法进行串联，也可以根据单个skills提问，或者不依赖skills（2）如果你构思的query依赖某几个skills，建议你以50%的概率在query中明确指出使用的skills，另外50%直接提出需求，不提及skills的名字（3）如果你的query依赖skills，请你在`required_skills`字段列出这些skills的名字，如果不依赖skills，则填入空列表。
+- **依赖skills，鼓励query依赖多个skills**：鼓励你给出一些依赖skills才能解决的query。（1）鼓励你优先思考如何将多个skills有逻辑地、自然地串联起来，根据串联之后的用途构思你的query，请注意，使用多个skills的query必须真实、有逻辑、存在有效的协同关系，不要强行串联多个skills；如果无法进行串联，请你可以根据单个skills提问，或者不依赖skills提问（2）如果你构思的query依赖某几个skills，建议你以50%的概率在query中明确指出使用的skills，另外50%直接提出需求，不提及skills的名字（3）如果你的query依赖skills，请你在`required_skills`字段列出这些skills的名字，如果不依赖skills，则填入空列表。
 - 依赖有限的两种工具：你设计的query**可以依赖浏览器和代码解释器来解决，依赖这两个工具时，禁止在query里直接提到这两个工具的名字，你直接说需求就可以了。以及，不允许依赖其他任何工具**。特别是不能依赖需要账号登录的工具，例如：邮箱、whatsapp、wind数据库等，需要账号的都不行。你需要思考，任何浏览器和代码解释器能解决的问题都可以。
 - 涉及query时适当参考用户画像和skills，可以帮助你设计出更符合真实场景的query；
 - query需要具体，严禁宽泛性 query（如"帮我处理一下数据"），必须包含具体的操作对象、操作方式、预期结果
 - query种类尽量多样，不要全部是同一类型的操作。请你大开脑洞。
 - query应当符合该用户画像的身份、习惯和知识水平。
 
-请直接输出有效的JSON，包含三个字段，"thoughs""queries"和"required_skills"。其中thoughs可以输出你构思这道题目时的思路，请注意满足以上需求；queries是你构思的query本身；required_skills是这个query依赖的技能列表（如果不依赖skills则填入空列表）。标准格式如下：
+请直接输出有效的JSON，包含3个字段，"thoughs""queries"和"required_skills"。其中thoughs可以输出你构思这道题目时的思路，请注意满足以上需求；queries是你构思的query本身；required_skills是这个query依赖的技能列表（如果不依赖skills则填入空列表）。标准格式如下：
 [
   {{"queries": "xxx", "required_skills": ["xxx", "xxx", ...]}},
   {{"queries": "xxx", "required_skills": ["xxx", "xxx", ...]}},
