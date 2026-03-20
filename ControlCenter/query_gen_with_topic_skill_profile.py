@@ -312,15 +312,33 @@ _SIMPLE_QUERY_HINT = (
 
 
 def _normalize_queries(raw_queries: list) -> list[dict]:
-    """标准化 LLM 返回的 queries，确保每个元素都是 {queries, required_skills} 格式。"""
+    """标准化 LLM 返回的 queries，确保每个元素都含 required_skills/required_files。"""
+    def _to_str_list(val) -> list[str]:
+        if val is None:
+            return []
+        if isinstance(val, list):
+            return [str(x) for x in val if x is not None]
+        if isinstance(val, str):
+            return [val] if val else []
+        return [str(val)]
+
     normalized = []
     for item in raw_queries:
         if isinstance(item, str):
-            normalized.append({"queries": item, "required_skills": []})
+            normalized.append({
+                "queries": item,
+                "required_skills": [],
+                "required_files": [],
+            })
         elif isinstance(item, dict):
+            required_files = item.get("required_files")
+            if required_files is None:
+                # 兼容部分模型可能返回的变体字段
+                required_files = item.get("required_file", item.get("files", []))
             normalized.append({
                 "queries": item.get("queries", ""),
-                "required_skills": item.get("required_skills", []),
+                "required_skills": _to_str_list(item.get("required_skills", [])),
+                "required_files": _to_str_list(required_files),
             })
         else:
             raise ValueError(f"LLM 返回的 query 元素格式异常: {type(item)}")
