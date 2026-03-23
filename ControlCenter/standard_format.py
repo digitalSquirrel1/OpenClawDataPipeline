@@ -60,6 +60,15 @@ def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[
     query_strings = []
     required_skills_list = []
     required_files_list = []
+    def _to_str_list(val) -> list[str]:
+        if val is None:
+            return []
+        if isinstance(val, list):
+            return [str(x) for x in val if x is not None]
+        if isinstance(val, str):
+            return [val] if val else []
+        return [str(val)]
+
     for item in queries:
         if isinstance(item, str):
             query_strings.append(item)
@@ -67,8 +76,11 @@ def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[
             required_files_list.append([])
         elif isinstance(item, dict):
             query_strings.append(item.get("queries", ""))
-            required_skills_list.append(item.get("required_skills", []))
-            required_files_list.append(item.get("required_files", []))
+            required_skills_list.append(_to_str_list(item.get("required_skills", [])))
+            required_files = item.get("required_files")
+            if required_files is None:
+                required_files = item.get("required_file", item.get("files", []))
+            required_files_list.append(_to_str_list(required_files))
         else:
             raise ValueError(f"queries 元素格式异常: {type(item)} — {item}")
     return query_strings, required_skills_list, required_files_list
