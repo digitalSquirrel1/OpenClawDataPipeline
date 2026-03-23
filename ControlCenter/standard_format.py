@@ -141,14 +141,14 @@ def process_single_json(
 
             skill_rel_paths = []
             for skill_info in skills:
-                skill_rel = skill_info["skill目录"]
+                skill_rel = skill_info["skill目录"].replace("\\", "/")
                 src_skill = skills_dir / skill_rel
                 if not src_skill.exists():
                     raise FileNotFoundError(
                         f"skill 目录不存在: {src_skill}\n"
                         f"  skill目录={skill_rel}, skills_dir={skills_dir}"
                     )
-                skill_rel_paths.append(skill_rel.replace("\\", "/"))
+                skill_rel_paths.append(skill_rel)
 
             # 拆分 queries 和 required_skills / required_files
             query_strings, required_skills_list, required_files_list = _normalize_queries(queries)
@@ -194,14 +194,14 @@ def process_single_json(
 
             skill_rel_paths = []
             for skill_info in skills:
-                skill_rel = skill_info["skill目录"]
+                skill_rel = skill_info["skill目录"].replace("\\", "/")
                 src_skill = skills_dir / skill_rel
                 if not src_skill.exists():
                     raise FileNotFoundError(
                         f"skill 目录不存在: {src_skill}\n"
                         f"  skill目录={skill_rel}, skills_dir={skills_dir}"
                     )
-                skill_rel_paths.append(skill_rel.replace("\\", "/"))
+                skill_rel_paths.append(skill_rel)
 
             # 拆分 queries 和 required_skills / required_files
             query_strings, required_skills_list, required_files_list = _normalize_queries(queries)

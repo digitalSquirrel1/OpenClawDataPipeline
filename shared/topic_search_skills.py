@@ -89,7 +89,9 @@ def search_skills_by_topic(
         if not skill_abs_dir.is_dir():
             print(f"[Warning] skill 目录不存在，已剔除: {skill_abs_dir}")
             continue
-        valid.append(skill)
+        # 统一路径分隔符为正斜杠，避免 Windows 反斜杠在其他平台引发路径错误
+        normalized = {**skill, "skill目录": skill_rel_dir}
+        valid.append(normalized)
 
     return valid
 
