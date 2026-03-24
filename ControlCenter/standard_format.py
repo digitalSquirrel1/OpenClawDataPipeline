@@ -46,20 +46,22 @@ def _resolve(rel_or_none: str | None, default_rel: str) -> Path:
     return p if p.is_absolute() else (_PROJECT_ROOT / p).resolve()
 
 
-def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[list[str]]]:
-    """将 queries 列表拆分为纯字符串列表和对应的 required_skills、required_files 列表。
+def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[list[str]], list[list[str]]]:
+    """将 queries 列表拆分为纯字符串列表和对应的 required_skills、required_files、rubrics 列表。
 
     兼容旧格式（纯字符串列表）和新格式（字典列表）。
 
     Returns:
-        (query_strings, required_skills_list, required_files_list)
+        (query_strings, required_skills_list, required_files_list, rubrics_list)
         - query_strings: list[str]，每个 query 的文本
         - required_skills_list: list[list[str]]，与 query_strings 一一对应的技能列表
         - required_files_list: list[list[str]]，与 query_strings 一一对应的文件列表
+        - rubrics_list: list[list[str]]，与 query_strings 一一对应的质检标准列表
     """
     query_strings = []
     required_skills_list = []
     required_files_list = []
+    rubrics_list = []
     def _to_str_list(val) -> list[str]:
         if val is None:
             return []
@@ -74,6 +76,7 @@ def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[
             query_strings.append(item)
             required_skills_list.append([])
             required_files_list.append([])
+            rubrics_list.append([])
         elif isinstance(item, dict):
             query_strings.append(item.get("queries", ""))
             required_skills_list.append(_to_str_list(item.get("required_skills", [])))
@@ -81,9 +84,10 @@ def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[
             if required_files is None:
                 required_files = item.get("required_file", item.get("files", []))
             required_files_list.append(_to_str_list(required_files))
+            rubrics_list.append(_to_str_list(item.get("rubrics", [])))
         else:
             raise ValueError(f"queries 元素格式异常: {type(item)} — {item}")
-    return query_strings, required_skills_list, required_files_list
+    return query_strings, required_skills_list, required_files_list, rubrics_list
 
 
 def _sanitize_folder_name(name: str) -> str:
@@ -162,8 +166,8 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel)
 
-            # 拆分 queries 和 required_skills / required_files
-            query_strings, required_skills_list, required_files_list = _normalize_queries(queries)
+            # 拆分 queries 和 required_skills / required_files / rubrics
+            query_strings, required_skills_list, required_files_list, rubrics_list = _normalize_queries(queries)
 
             all_queries.append({
                 "topic": topic,
@@ -172,6 +176,7 @@ def process_single_json(
                 "skills": skill_rel_paths,
                 "required_skills": required_skills_list,
                 "required_files": required_files_list,
+                "rubrics": rubrics_list,
             })
 
         with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
@@ -215,8 +220,8 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel)
 
-            # 拆分 queries 和 required_skills / required_files
-            query_strings, required_skills_list, required_files_list = _normalize_queries(queries)
+            # 拆分 queries 和 required_skills / required_files / rubrics
+            query_strings, required_skills_list, required_files_list, rubrics_list = _normalize_queries(queries)
 
             user_queries = [{
                 "topic": topic,
@@ -225,6 +230,7 @@ def process_single_json(
                 "skills": skill_rel_paths,
                 "required_skills": required_skills_list,
                 "required_files": required_files_list,
+                "rubrics": rubrics_list,
             }]
             with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
                 json.dump(user_queries, f, ensure_ascii=False, indent=2)
