@@ -31,10 +31,15 @@
 - query需要具体，严禁宽泛性 query（如"帮我处理一下数据"），必须包含具体的操作对象、操作方式、预期结果
 - query种类尽量多样，不要全部是同一类型的操作。请你大开脑洞。
 - query应当符合该用户画像的身份、习惯和知识水平。
+- **为每个query生成质检评分标准（rubrics）**：为每个query设计10条二元判定标准（True/False），用于事后评估AI是否正确完成了该任务。rubrics需满足：
+  （1）每条rubric必须是可以明确判定为True或False的客观陈述，例如"输出文件包含至少3列数据"而非"输出质量好"；
+  （2）rubrics应覆盖任务的关键完成要素：核心操作是否执行、输出格式是否正确、关键内容是否包含、约束条件是否满足等；
+  （3）rubrics之间不应重复，应从不同维度检验任务完成情况；
+  （4）rubrics应与query的具体内容紧密相关，不要给出通用标准。
 
-请直接输出有效的JSON，包含3个字段，"thoughs""queries"和"required_skills"。其中thoughs可以输出你构思这道题目时的思路，请注意满足以上需求；queries是你构思的query本身；required_skills是这个query依赖的技能列表（如果不依赖skills则填入空列表）。标准格式如下：
+请直接输出有效的JSON，包含4个字段，"thoughs""queries""required_skills"和"rubrics"。其中thoughs可以输出你构思这道题目时的思路，请注意满足以上需求；queries是你构思的query本身；required_skills是这个query依赖的技能列表（如果不依赖skills则填入空列表）；rubrics是该query的质检评分标准列表，每条为一个可判定True/False的客观陈述。标准格式如下：
 [
-  {{"queries": "xxx", "required_skills": ["xxx", "xxx", ...]}},
-  {{"queries": "xxx", "required_skills": ["xxx", "xxx", ...]}},
+  {{"queries": "xxx", "required_skills": ["xxx", "xxx", ...], "rubrics": ["标准1", "标准2", ...]}},
+  {{"queries": "xxx", "required_skills": ["xxx", "xxx", ...], "rubrics": ["标准1", "标准2", ...]}},
   ...
 ]

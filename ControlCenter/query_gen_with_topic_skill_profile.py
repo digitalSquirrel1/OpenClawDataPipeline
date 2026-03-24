@@ -329,6 +329,7 @@ def _normalize_queries(raw_queries: list) -> list[dict]:
                 "queries": item,
                 "required_skills": [],
                 "required_files": [],
+                "rubrics": [],
             })
         elif isinstance(item, dict):
             required_files = item.get("required_files")
@@ -339,6 +340,7 @@ def _normalize_queries(raw_queries: list) -> list[dict]:
                 "queries": item.get("queries", ""),
                 "required_skills": _to_str_list(item.get("required_skills", [])),
                 "required_files": _to_str_list(required_files),
+                "rubrics": _to_str_list(item.get("rubrics", [])),
             })
         else:
             raise ValueError(f"LLM 返回的 query 元素格式异常: {type(item)}")
