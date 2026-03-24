@@ -90,6 +90,42 @@ def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[
     return query_strings, required_skills_list, required_files_list, rubrics_list
 
 
+def _build_profile_to_env_map(envs_dir: Path, profiles_dir: Path) -> dict[str, str]:
+    """扫描 envs_dir 下的 pipeline_meta.json，构建 profile_rel_path → env_rel_path 映射。
+
+    Returns:
+        {profile_rel_path: env_rel_path, ...}
+        例如 {"user_profile_1_检察官_xxx.json": "user_profile_1_检察官_xxx"}
+    """
+    profiles_dir_resolved = profiles_dir.resolve()
+    mapping: dict[str, str] = {}
+
+    for env_subdir in sorted(envs_dir.iterdir()):
+        if not env_subdir.is_dir():
+            continue
+        meta_path = env_subdir / "pipeline_meta.json"
+        if not meta_path.exists():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            source_profile_path = meta.get("source_profile_path")
+            if not source_profile_path:
+                continue
+            source_profile_path = Path(source_profile_path).resolve()
+            # 计算相对于 profiles_dir 的路径
+            try:
+                profile_rel = source_profile_path.relative_to(profiles_dir_resolved).as_posix()
+            except ValueError:
+                # source_profile_path 不在 profiles_dir 下，用文件名兜底
+                profile_rel = source_profile_path.name
+            env_rel = env_subdir.name
+            mapping[profile_rel] = env_rel
+        except Exception as e:
+            print(f"  [Warning] 解析 pipeline_meta.json 失败: {meta_path} — {e}")
+
+    return mapping
+
+
 def _sanitize_folder_name(name: str) -> str:
     """清理文件夹名中的非法字符。"""
     for ch in r'<>:"/\|?*':
@@ -103,8 +139,13 @@ def process_single_json(
     skills_dir: Path,
     output_dir: Path | None,
     envs_dir: Path | None,
+    profile_env_map: dict[str, str] | None = None,
 ) -> list[str]:
-    """处理单个原 JSON 文件，返回生成的打包文件夹路径列表。"""
+    """处理单个原 JSON 文件，返回生成的打包文件夹路径列表。
+
+    Args:
+        profile_env_map: profile_rel_path → env_rel_path 映射，用于自动补充 env_rel_path。
+    """
 
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -112,6 +153,24 @@ def process_single_json(
     profile_rel_path = data["profile_rel_path"]
     results = data["results"]
     env_rel_path = data.get("env_rel_path")
+
+    # ── 自动补充 env_rel_path：JSON 无此字段但提供了 envs_dir 时，从映射中查找 ──
+    if env_rel_path is None and envs_dir is not None and profile_env_map:
+        matched_env = profile_env_map.get(profile_rel_path)
+        if matched_env is None:
+            # 尝试用文件名匹配（兼容绝对路径 vs 相对路径差异）
+            profile_name = Path(profile_rel_path).name
+            matched_env = profile_env_map.get(profile_name)
+        if matched_env is not None:
+            env_rel_path = matched_env
+            # 回写到源 JSON 文件
+            data["env_rel_path"] = env_rel_path
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"    [自动匹配] {profile_rel_path} → env: {env_rel_path}")
+        else:
+            print(f"    [Warning] 未找到 profile 对应的 env: {profile_rel_path}，跳过")
+            return []
 
     # profile_rel_path 的 stem（去掉 .json 后缀）
     profile_stem = Path(profile_rel_path).stem
@@ -121,10 +180,6 @@ def process_single_json(
         assert envs_dir is not None, (
             f"JSON 文件 {json_path.name} 包含 env_rel_path={env_rel_path}，"
             f"但未提供 --envs-dir 参数"
-        )
-        assert output_dir is None, (
-            f"JSON 文件 {json_path.name} 包含 env_rel_path={env_rel_path}，"
-            f"此时不应指定 --output-dir 参数"
         )
 
     created_folders = []
@@ -268,10 +323,16 @@ def run(
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── 构建 profile → env 映射（用于自动补充 env_rel_path）──
+    profile_env_map: dict[str, str] | None = None
+    if envs_dir is not None:
+        profile_env_map = _build_profile_to_env_map(envs_dir, profiles_dir)
+        print(f"  已构建 profile→env 映射: {len(profile_env_map)} 条")
+
     total_folders = 0
     for json_path in json_files:
         print(f"  处理: {json_path.name}")
-        folders = process_single_json(json_path, profiles_dir, skills_dir, output_dir, envs_dir)
+        folders = process_single_json(json_path, profiles_dir, skills_dir, output_dir, envs_dir, profile_env_map)
         total_folders += len(folders)
         for f in folders:
             print(f"    -> {Path(f).name}")
