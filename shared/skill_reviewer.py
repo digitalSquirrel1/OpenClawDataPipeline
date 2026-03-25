@@ -5,6 +5,7 @@ import json
 import asyncio
 import argparse
 from pathlib import Path
+from typing import Iterable
 
 import httpx
 from openai import AsyncOpenAI
@@ -104,7 +105,63 @@ def find_skill_files(target_dir: str) -> list[dict]:
                 if rel_dir == ".":
                     rel_dir = ""
                 results.append({"full_path": full_path, "rel_dir": rel_dir, "filename": file_name})
+    results.sort(key=lambda item: (item["rel_dir"].replace("\\", "/"), item["filename"]))
     return results
+
+
+def _result_key(rel_dir: str) -> str:
+    return rel_dir.replace("\\", "/")
+
+
+def _load_existing_results(output_path: str | None) -> dict[str, dict]:
+    if not output_path or not os.path.isfile(output_path):
+        return {}
+    try:
+        with open(output_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:
+        print(f"警告：读取已有结果失败，将从头开始处理。原因：{exc}")
+        return {}
+
+    if not isinstance(data, list):
+        print("警告：已有输出不是 JSON 数组，将从头开始处理。")
+        return {}
+
+    existing: dict[str, dict] = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        key = _result_key(str(item.get("skill目录", "")))
+        if key not in existing:
+            existing[key] = item
+    return existing
+
+
+def _order_results(results_by_key: dict[str, dict], skill_files: Iterable[dict]) -> list[dict]:
+    ordered = []
+    for sf in skill_files:
+        key = _result_key(sf["rel_dir"])
+        result = results_by_key.get(key)
+        if result is not None:
+            ordered.append(result)
+    return ordered
+
+
+def _write_results(output_path: str | None, results: list[dict]) -> None:
+    output_json = json.dumps(results, ensure_ascii=False, indent=2)
+    if not output_path:
+        print("\n===== 审核结果 =====")
+        print(output_json)
+        return
+
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    tmp_path = f"{output_path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(output_json)
+    os.replace(tmp_path, output_path)
 
 
 async def review_skill(client: AsyncOpenAI, content: str, model: str) -> dict:
@@ -187,30 +244,44 @@ async def async_main():
             print(f"在 {target_dir} 下未找到任何 SKILL.md 文件")
             return
 
-        total = len(skill_files)
-        print(f"共找到 {total} 个 SKILL.md 文件，并发数：{concurrency}，开始审核...\n")
-
-        sem = asyncio.Semaphore(concurrency)
-        tasks = [
-            process_one(sem, client, sf, model, i, total)
-            for i, sf in enumerate(skill_files, 1)
+        existing_results = _load_existing_results(output_path)
+        completed_keys = set(existing_results)
+        pending_skill_files = [
+            sf for sf in skill_files if _result_key(sf["rel_dir"]) not in completed_keys
         ]
-        raw_results = await asyncio.gather(*tasks)
-        results = [item for item in raw_results if item is not None]
 
-        print(f"\n审核完成，共处理 {len(results)} 个技能文件。")
+        total = len(skill_files)
+        skipped = total - len(pending_skill_files)
+        print(
+            f"共找到 {total} 个 SKILL.md 文件，并发数：{concurrency}，"
+            f"已存在结果 {skipped} 个，待处理 {len(pending_skill_files)} 个。\n"
+        )
 
-        output_json = json.dumps(results, ensure_ascii=False, indent=2)
+        results_by_key = dict(existing_results)
+        if pending_skill_files:
+            sem = asyncio.Semaphore(concurrency)
+            tasks = [
+                asyncio.create_task(process_one(sem, client, sf, model, i, total))
+                for i, sf in enumerate(pending_skill_files, skipped + 1)
+            ]
+            for task, sf in zip(tasks, pending_skill_files):
+                task.set_name(_result_key(sf["rel_dir"]))
+
+            for done in asyncio.as_completed(tasks):
+                result = await done
+                if result is None:
+                    continue
+                key = _result_key(result.get("skill目录", ""))
+                results_by_key[key] = result
+                ordered_results = _order_results(results_by_key, skill_files)
+                _write_results(output_path, ordered_results)
+
+        final_results = _order_results(results_by_key, skill_files)
+        print(f"\n审核完成，当前已保存 {len(final_results)} 个技能结果。")
+
+        _write_results(output_path, final_results)
         if output_path:
-            output_dir = os.path.dirname(output_path)
-            if output_dir:
-                os.makedirs(output_dir, exist_ok=True)
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(output_json)
             print(f"结果已保存到：{output_path}")
-        else:
-            print("\n===== 审核结果 =====")
-            print(output_json)
     finally:
         await client.close()
 
