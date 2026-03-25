@@ -81,9 +81,20 @@ class ProfileGenerator:
 
     def __init__(self, model: str):
         self.model = model
+        self.batch_code = self._make_batch_code()
         # 从配置读取 prompt 模板
         prompt_path = _gen_cfg.get("PROFILE_GENERATION_PROMPT", "prompts/profile_generation_prompt.md")
         self.prompt_template = get_prompt(prompt_path)
+
+    @staticmethod
+    def _make_batch_code(now: datetime | None = None) -> str:
+        """
+        将运行开始时间压缩成 2 位批次码。
+        同一轮生成共享同一个尾缀，文件唯一性仍由 index 保证。
+        """
+        now = now or datetime.now()
+        minute_of_day = now.hour * 60 + now.minute
+        return f"{minute_of_day % 100:02d}"
 
     def _get_random_attributes(self):
         """生成随机的性别、年龄和职业"""
@@ -151,9 +162,8 @@ class ProfileGenerator:
         name = basic.get("姓名", "Unknown")
         role = basic.get("职业", "Unknown")
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_role = role.replace(" ", "_").replace("/", "_")
-        filename = f"user_profile_{index}_{safe_role}_{timestamp}.json"
+        filename = f"user_profile_{index}_{safe_role}_{self.batch_code}.json"
         filepath = profiles_dir / filename
         filepath.write_text(
             json.dumps(profile, ensure_ascii=False, indent=2),
