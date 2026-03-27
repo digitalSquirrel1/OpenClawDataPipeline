@@ -88,7 +88,7 @@ class LLMClient:
                 if not isinstance(raw, str):
                     raise TypeError(f'llm_client.py generate do not return a stiring: type={type(raw)}, {raw=}')
                 # 如果 LLM 受 prompt 模板 {{}} 转义影响，输出了双花括号，先剥掉外层
-                stripped = raw.strip()
+                stripped = self._strip_json_fence(raw.strip())
                 if stripped.startswith('{{') and stripped.endswith('}}'):
                     print(f'double braces found: {stripped[:50]}...{stripped[-50:]}')
                     stripped = stripped[1:-1]  # 剥掉最外层的一对花括号
@@ -103,7 +103,7 @@ class LLMClient:
                 except json.JSONDecodeError:
                     pass
                 # 正则提取最外层 {...}
-                m = re.search(r"\{[\s\S]+\}", cleaned)
+                m = re.search(r"(\{[\s\S]+\}|\[[\s\S]+\])", cleaned)
                 if m:
                     try:
                         return json.loads(m.group())
@@ -117,9 +117,27 @@ class LLMClient:
         raise ValueError(f"Cannot parse JSON, failed {max_retry} times:\n{raw=}")
 
     @staticmethod
+    def _strip_json_fence(raw: str) -> str:
+        """Strip a surrounding markdown code fence if JSON is wrapped in ```json ... ```."""
+        s = raw.strip()
+        if not s.startswith("```"):
+            return s
+
+        lines = s.splitlines()
+        if not lines:
+            return s
+
+        if not lines[0].strip().startswith("```"):
+            return s
+
+        if len(lines) >= 2 and lines[-1].strip() == "```":
+            return "\n".join(lines[1:-1]).strip()
+        return s
+
+    @staticmethod
     def _clean_json(raw: str) -> str:
         """尝试修复 LLM 输出的常见 JSON 格式错误。"""
-        s = raw
+        s = LLMClient._strip_json_fence(raw)
         # 去除 // 行注释
         s = re.sub(r'//[^\n]*', '', s)
         # 去除 /* ... */ 块注释
