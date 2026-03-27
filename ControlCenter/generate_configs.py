@@ -28,7 +28,7 @@ def find_profile_file(folder: Path) -> str | None:
     return None
 
 
-def find_map_file(folder: Path) -> str:
+def find_map_file(folder: Path) -> str | None:
     """找到文件夹下 MAP_Linux.json 或 MAP_Windows.json，返回文件名（不含 .json 后缀）"""
     has_linux = (folder / "MAP_Linux.json").exists()
     has_windows = (folder / "MAP_Windows.json").exists()
@@ -38,7 +38,7 @@ def find_map_file(folder: Path) -> str:
         return "MAP_Linux"
     if has_windows:
         return "MAP_Windows"
-    raise FileNotFoundError(f"文件夹中未找到 MAP_Linux.json 或 MAP_Windows.json: {folder}")
+    return None
 
 
 def generate_single_config(
@@ -50,7 +50,7 @@ def generate_single_config(
     path_discription_abs: str | None,
     skills: list,
     profile_file: str | None,
-    map_file: str,
+    map_file: str | None,
     skill_dir: str,
     agent_dir: str,
     simulator_config: str,
@@ -71,7 +71,7 @@ def generate_single_config(
     elif map_file == "MAP_Windows":
         platform = "windows"
     else:
-        raise ValueError(f"未知的 map_file: {map_file}")
+        platform = None
 
     # 转换skills为路径字符串数组
     converted_skills = []
@@ -86,21 +86,24 @@ def generate_single_config(
     else:
         copy_map_not_workspace = random.random() < copy_map_not_workspace_ratio
 
+    user_dir = {
+        "path": relative_user_dir.as_posix(),
+        "profile_file": profile_file,
+        "copy_map_not_workspace": copy_map_not_workspace,
+    }
+    if map_file is not None:
+        user_dir["map_file"] = map_file
+
     return {
         "system": {
-            "platform": [platform],
+            "platform": [platform] if platform is not None else [],
             "python": "3.12",
             "tools": []
         },
         "input_dir": {
             "skill_dir": Path(skill_dir).as_posix(),
             "agent_dir": agent_dir,
-            "user_dir": {
-                "path": relative_user_dir.as_posix(),
-                "profile_file": profile_file,
-                "map_file": map_file,
-                "copy_map_not_workspace": copy_map_not_workspace,
-            }
+            "user_dir": user_dir
         },
         "agents": [
             {
@@ -128,8 +131,8 @@ def generate_single_config(
 
 def main():
     parser = argparse.ArgumentParser(description="批量生成 AutomationConfig JSON 配置文件（每条 query 一个文件）")
-    parser.add_argument("--input",  default=r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260324\sorted_environments\linux2\environments", help="输入文件夹，包含各 profile 子目录")
-    parser.add_argument("--output", default=r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260324\sorted_environments\linux2\configs", help="输出配置文件夹")
+    parser.add_argument("--input",  default=r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260327\standard_queries_skill_noenv", help="输入文件夹，包含各 profile 子目录") # 精确到environments层
+    parser.add_argument("--output", default=r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260327\configs", help="输出配置文件夹")
     parser.add_argument("--skill-dir",        default="skill_localize/skills_library",  help="技能库根目录")
     parser.add_argument("--agent-dir",        default="agents",  help="Agent 源文件目录")
     parser.add_argument("--simulator-config", default="configs/user_proxy_model.json",  help="Simulator 配置 JSON 绝对路径")
