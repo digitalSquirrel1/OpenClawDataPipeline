@@ -27,6 +27,19 @@ def find_profile_file(folder: Path) -> str | None:
     return None
 
 
+def find_map_file(folder: Path) -> str:
+    """找到文件夹下 MAP_Linux.json 或 MAP_Windows.json，返回文件名（不含 .json 后缀）"""
+    has_linux = (folder / "MAP_Linux.json").exists()
+    has_windows = (folder / "MAP_Windows.json").exists()
+    if has_linux and has_windows:
+        raise FileExistsError(f"文件夹同时存在 MAP_Linux.json 和 MAP_Windows.json: {folder}")
+    if has_linux:
+        return "MAP_Linux"
+    if has_windows:
+        return "MAP_Windows"
+    raise FileNotFoundError(f"文件夹中未找到 MAP_Linux.json 或 MAP_Windows.json: {folder}")
+
+
 def generate_single_config(
     folder: Path,
     input_base: Path,
@@ -35,6 +48,7 @@ def generate_single_config(
     query_text: str,
     skills: list,
     profile_file: str | None,
+    map_file: str,
     skill_dir: str,
     agent_dir: str,
     simulator_config: str,
@@ -48,6 +62,14 @@ def generate_single_config(
     agent_name = f"assistant{agent_index}"
     relative_user_dir = Path(input_base.name) / folder.name
 
+    # 根据 map_file 确定 platform
+    if map_file == "MAP_Linux":
+        platform = "linux"
+    elif map_file == "MAP_Windows":
+        platform = "windows"
+    else:
+        raise ValueError(f"未知的 map_file: {map_file}")
+
     # 转换skills为路径字符串数组
     converted_skills = []
     for skill in skills:
@@ -58,7 +80,7 @@ def generate_single_config(
 
     return {
         "system": {
-            "platform": ["linux"],
+            "platform": [platform],
             "python": "3.12",
             "tools": []
         },
@@ -67,7 +89,8 @@ def generate_single_config(
             "agent_dir": agent_dir,
             "user_dir": {
                 "path": relative_user_dir.as_posix(),
-                "profile_file": profile_file
+                "profile_file": profile_file,
+                "map_file": map_file
             }
         },
         "agents": [
@@ -130,6 +153,7 @@ def main():
         try:
             queries_data = json.loads((folder / "user_queries.json").read_text(encoding="utf-8"))
             profile_file = find_profile_file(folder)
+            map_file = find_map_file(folder)
 
             # 新格式：user_queries.json 是数组，每个元素有 topic、queries、skills
             for topic_item in queries_data:
@@ -151,6 +175,7 @@ def main():
                         query_text=query_text,
                         skills=skills,
                         profile_file=profile_file,
+                        map_file=map_file,
                         skill_dir=args.skill_dir,
                         agent_dir=args.agent_dir,
                         simulator_config=args.simulator_config,
