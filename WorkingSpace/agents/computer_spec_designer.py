@@ -35,34 +35,46 @@ def _load_prompt(key: str) -> str:
     return get_prompt(path) if path else ""
 
 
-SYSTEM = "你是一名专业的IT环境模拟专家。你的任务是设计一个高度真实的Windows用户电脑环境。只输出合法JSON，不要有任何注释或多余文字。"
+SYSTEM_WINDOWS = "你是一名专业的IT环境模拟专家。你的任务是设计一个高度真实的Windows用户电脑环境。只输出合法JSON，不要有任何注释或多余文字。"
+SYSTEM_LINUX   = "你是一名专业的IT环境模拟专家。你的任务是设计一个高度真实的Linux(Ubuntu)用户电脑环境。只输出合法JSON，不要有任何注释或多余文字。"
 
-PROMPT_DIRS        = _load_prompt("PROMPT_DIRS")
-PROMPT_PDF         = _load_prompt("PROMPT_PDF")
-PROMPT_HTML        = _load_prompt("PROMPT_HTML")
-PROMPT_EXCEL_CSV   = _load_prompt("PROMPT_EXCEL_CSV")
-PROMPT_DOCX        = _load_prompt("PROMPT_DOCX")
-PROMPT_XLSX        = _load_prompt("PROMPT_XLSX")
-PROMPT_MD          = _load_prompt("PROMPT_MD")
-PROMPT_IMAGE       = _load_prompt("PROMPT_IMAGE")
-PROMPT_VIDEO       = _load_prompt("PROMPT_VIDEO")
-PROMPT_AUDIO       = _load_prompt("PROMPT_AUDIO")
-PROMPT_FILE_COUNTS = _load_prompt("PROMPT_FILE_COUNTS")
-PROMPT_ENVCONFIG   = _load_prompt("PROMPT_ENVCONFIG")
+PROMPT_DIRS              = _load_prompt("PROMPT_DIRS")
+PROMPT_DIRS_LINUX        = _load_prompt("PROMPT_DIRS_LINUX")
+PROMPT_PDF               = _load_prompt("PROMPT_PDF")
+PROMPT_HTML              = _load_prompt("PROMPT_HTML")
+PROMPT_EXCEL_CSV         = _load_prompt("PROMPT_EXCEL_CSV")
+PROMPT_DOCX              = _load_prompt("PROMPT_DOCX")
+PROMPT_XLSX              = _load_prompt("PROMPT_XLSX")
+PROMPT_MD                = _load_prompt("PROMPT_MD")
+PROMPT_IMAGE             = _load_prompt("PROMPT_IMAGE")
+PROMPT_VIDEO             = _load_prompt("PROMPT_VIDEO")
+PROMPT_AUDIO             = _load_prompt("PROMPT_AUDIO")
+PROMPT_FILE_COUNTS       = _load_prompt("PROMPT_FILE_COUNTS")
+PROMPT_ENVCONFIG         = _load_prompt("PROMPT_ENVCONFIG")
+PROMPT_ENVCONFIG_LINUX   = _load_prompt("PROMPT_ENVCONFIG_LINUX")
+
+_LINUX_FILE_PREFIX = (
+    "【重要】这是一个 Linux 系统环境，所有文件路径必须使用目录结构中提供的 Linux 格式"
+    "（如 Documents/xxx、Projects/xxx），禁止使用 Windows 盘符格式（如 D:/、C:/ 等）。"
+    "请忽略以下示例中的 Windows 路径格式，改用目录结构中的实际路径。\n\n"
+)
 
 
 class ComputerSpecDesigner:
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, system_type: str = "windows"):
         self.llm = llm
+        self.system_type = system_type
 
     def design(self, profile: dict) -> dict:
         profile_json = json.dumps(profile, ensure_ascii=False, indent=2)
         username = profile.get("username", "user")
+        is_linux = self.system_type == "linux"
 
         # ── Step 1: directories ──────────────────────────────────────────────
-        print("[Step 1] 设计目录结构...")
+        print(f"[Step 1] 设计目录结构（{'Linux' if is_linux else 'Windows'}）...")
+        prompt_dirs = PROMPT_DIRS_LINUX if is_linux else PROMPT_DIRS
         dirs_spec = self.llm.generate_json(
-            PROMPT_DIRS.format(profile_json=profile_json, username=username),
+            prompt_dirs.format(profile_json=profile_json, username=username),
         )
         directories = dirs_spec.get("directories", [])
         print(f"  -> {len(directories)} 个目录")
@@ -103,6 +115,8 @@ class ComputerSpecDesigner:
                     username=username,
                     file_count=file_count,
                 )
+                if is_linux:
+                    prompt = _LINUX_FILE_PREFIX + prompt
                 result = self.llm.generate_json(
                     prompt, 
                 )
@@ -136,8 +150,9 @@ class ComputerSpecDesigner:
         print(f"[Step 4] 文件规划完成，共 {len(all_files)} 个文件，{len(directories)} 个目录")
 
         # ── Step 4: env_config ───────────────────────────────────────────────
-        print("[Step 5] 设计电脑环境配置（env_config）...")
-        prompt_env = PROMPT_ENVCONFIG.format(
+        print(f"[Step 5] 设计电脑环境配置（{'Linux' if is_linux else 'Windows'}）...")
+        prompt_envconfig = PROMPT_ENVCONFIG_LINUX if is_linux else PROMPT_ENVCONFIG
+        prompt_env = prompt_envconfig.format(
             name=profile.get("name", "用户"),
             role=profile.get("role", ""),
             company=profile.get("company", ""),
