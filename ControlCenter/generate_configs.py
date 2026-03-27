@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import random
 from pathlib import Path
 
 
@@ -46,6 +47,7 @@ def generate_single_config(
     agent_index: int,
     query_index: int,
     query_text: str,
+    path_discription_abs: str | None,
     skills: list,
     profile_file: str | None,
     map_file: str,
@@ -57,6 +59,7 @@ def generate_single_config(
     gateway_ws_url: str,
     api_key: str | None,
     timeout: int,
+    copy_map_not_workspace_ratio: float,
 ) -> dict:
     """为单条 query 生成一份完整配置"""
     agent_name = f"assistant{agent_index}"
@@ -78,6 +81,11 @@ def generate_single_config(
         else:
             converted_skills.append(skill)
 
+    if path_discription_abs == "abs":
+        copy_map_not_workspace = True
+    else:
+        copy_map_not_workspace = random.random() < copy_map_not_workspace_ratio
+
     return {
         "system": {
             "platform": [platform],
@@ -90,7 +98,8 @@ def generate_single_config(
             "user_dir": {
                 "path": relative_user_dir.as_posix(),
                 "profile_file": profile_file,
-                "map_file": map_file
+                "map_file": map_file,
+                "copy_map_not_workspace": copy_map_not_workspace,
             }
         },
         "agents": [
@@ -129,7 +138,16 @@ def main():
     parser.add_argument("--gateway-ws-url",   default="ws://127.0.0.1:18789/gateway", help="WebSocket 网关 URL")
     parser.add_argument("--api-key",          default=None,   help="API Key（可选）")
     parser.add_argument("--timeout",          type=int, default=3600, help="每条 query 超时时间（秒，默认 3600）")
+    parser.add_argument(
+        "--copy-map-not-workspace-ratio",
+        type=float,
+        default=0.5,
+        help="当 path_discription_abs 不是 abs 时，copy_map_not_workspace 为 True 的概率，默认 0.5",
+    )
     args = parser.parse_args()
+
+    if not 0 <= args.copy_map_not_workspace_ratio <= 1:
+        raise ValueError("--copy-map-not-workspace-ratio 必须在 0 到 1 之间")
 
     input_dir  = Path(args.input)
     output_dir = Path(args.output)
@@ -160,11 +178,17 @@ def main():
                 topic = topic_item.get("topic", "unknown")
                 queries_list: list = topic_item.get("queries", [])
                 skills: list = topic_item.get("skills", [])
+                path_discription_abs_list: list = topic_item.get("path_discription_abs", [])
 
                 # topic 中特殊字符替换为下划线
                 safe_topic = topic.replace("/", "_").replace(" ", "_").replace("（", "_").replace("）", "_")
 
                 for q_idx, query_text in enumerate(queries_list, start=1):
+                    if isinstance(path_discription_abs_list, list) and q_idx - 1 < len(path_discription_abs_list):
+                        path_discription_abs = path_discription_abs_list[q_idx - 1]
+                    else:
+                        path_discription_abs = None
+
                     total += 1
                     global_agent_idx += 1
                     config = generate_single_config(
@@ -173,6 +197,7 @@ def main():
                         agent_index=global_agent_idx,
                         query_index=q_idx,
                         query_text=query_text,
+                        path_discription_abs=path_discription_abs,
                         skills=skills,
                         profile_file=profile_file,
                         map_file=map_file,
@@ -184,6 +209,7 @@ def main():
                         gateway_ws_url=args.gateway_ws_url,
                         api_key=args.api_key,
                         timeout=args.timeout,
+                        copy_map_not_workspace_ratio=args.copy_map_not_workspace_ratio,
                     )
                     out_file = output_dir / f"{folder.name}_{safe_topic}_q{q_idx}.json"
                     out_file.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
