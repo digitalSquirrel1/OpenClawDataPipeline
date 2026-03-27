@@ -110,8 +110,6 @@ class LLMClient:
                     except json.JSONDecodeError:
                         pass
                 print(f"Cannot parse JSON, retry {i_try}/{max_retry-1}:\n{raw=}")
-                with open(r'D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260312\environments\error.json', 'a+', encoding='utf-8') as f:
-                    f.write(raw)
             except Exception as e:
                 print(f'error parsing, {repr(e)}, {raw=}')
         raise ValueError(f"Cannot parse JSON, failed {max_retry} times:\n{raw=}")
