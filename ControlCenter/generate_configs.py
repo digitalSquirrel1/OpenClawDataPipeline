@@ -81,19 +81,16 @@ def generate_single_config(
         else:
             converted_skills.append(skill)
 
-    if path_discription_abs == "abs":
-        copy_map_not_workspace = True
-    else:
-        copy_map_not_workspace = random.random() < copy_map_not_workspace_ratio
-
     user_dir = {
         "path": relative_user_dir.as_posix(),
         "profile_file": profile_file,
     }
     if map_file is not None:
-        user_dir["copy_map_not_workspace"] = copy_map_not_workspace
-        if copy_map_not_workspace:
+        if path_discription_abs == "abs":
             user_dir["map_file"] = map_file
+        else:
+            if random.random() < copy_map_not_workspace_ratio:
+                user_dir["map_file"] = map_file
 
     return {
         "system": {
@@ -146,7 +143,7 @@ def main():
         "--copy-map-not-workspace-ratio",
         type=float,
         default=0.5,
-        help="当 path_discription_abs 不是 abs 时，copy_map_not_workspace 为 True 的概率，默认 0.5",
+        help="当 path_discription_abs 不是 abs 时，输出 map_file 的概率，默认 0.5",
     )
     args = parser.parse_args()
 
