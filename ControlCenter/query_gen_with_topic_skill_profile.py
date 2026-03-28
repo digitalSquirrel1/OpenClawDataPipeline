@@ -358,6 +358,7 @@ def generate_queries(
     num_calls: int = 3,
     detailed_query_ratio: float = 0.3,
     simple_query_ratio: float = 0.1,
+    path_discription_prompt_text: str | None = None,
 ) -> list[dict]:
     """多次调用 LLM，组合生成 n 条 queries 以提升多样性。
 
@@ -373,6 +374,8 @@ def generate_queries(
         num_calls: LLM 调用次数，拆分多次以降低同批次相似性。
         detailed_query_ratio: 每次调用追加「详细型」要求的概率。
         simple_query_ratio: 每次调用追加「简洁型」要求的概率。
+        path_discription_prompt_text: 路径描述提示词文本，用于填充 prompt 模板中的
+                  {path_discription_prompt} 占位符。
 
     Returns:
         query 字典列表，每个元素含 "queries"(str)、"required_skills"(list[str]) 和 "required_files"(list[str])
@@ -389,6 +392,8 @@ def generate_queries(
         profile_json=profile_json,
         current_date=datetime.now().strftime("%Y年%m月%d日"),
     )
+    if path_discription_prompt_text is not None:
+        base_fmt_kwargs["path_discription_prompt"] = path_discription_prompt_text
     if env_info is not None:
         base_fmt_kwargs["dir_count"] = env_info["dir_count"]
         base_fmt_kwargs["file_types_summary"] = env_info["file_types_summary"]
@@ -474,6 +479,8 @@ def _run_task(
     num_calls: int = 3,
     detailed_query_ratio: float = 0.3,
     simple_query_ratio: float = 0.1,
+    path_discription_prompt_text: str | None = None,
+    path_discription_abs: str | None = None,
 ) -> dict:
     """单个 task: 调用 LLM 生成 queries 并立即追加保存。
 
@@ -492,10 +499,12 @@ def _run_task(
             num_calls=num_calls,
             detailed_query_ratio=detailed_query_ratio,
             simple_query_ratio=simple_query_ratio,
+            path_discription_prompt_text=path_discription_prompt_text,
         )
         record = {
             "topic": topic,
             "system_type": system_type,
+            "path_discription_abs": path_discription_abs,
             "skills": [
                 {
                     "skill名称": s.get("skill名称", ""),
@@ -516,6 +525,61 @@ def _run_task(
         print(f"  [FAIL] topic「{topic}」× profile「{profile_rel}」→ {e}")
         traceback.print_exc()
         return {"topic": topic, "profile_rel": profile_rel, "status": "fail", "error": str(e)}
+
+
+def _normalize_path_discription_ratios(raw_value, default: list[float]) -> list[float]:
+    if not isinstance(raw_value, list) or len(raw_value) != 3:
+        return default
+
+    ratios: list[float] = []
+    for item in raw_value:
+        try:
+            ratios.append(max(0.0, float(item)))
+        except (TypeError, ValueError):
+            return default
+
+    return ratios if sum(ratios) > 0 else default
+
+
+def _load_path_discription_prompts(prompt_paths: list) -> list[str | None]:
+    prompts: list[str | None] = []
+    for p in prompt_paths:
+        prompts.append(get_prompt(p) if p else None)
+    while len(prompts) < 3:
+        prompts.append(None)
+    return prompts[:3]
+
+
+def _choose_path_discription_prompt(
+    system_type: str | None,
+    prompt_cfg_by_system: dict[str, dict[str, list]],
+) -> tuple[str | None, str | None]:
+    if system_type not in prompt_cfg_by_system:
+        return None, None
+
+    cfg = prompt_cfg_by_system[system_type]
+    available = [
+        (label, prompt_text, ratio)
+        for label, prompt_text, ratio in zip(
+            ["abs", "entire", "partial"],
+            cfg["prompts"],
+            cfg["ratios"],
+        )
+        if prompt_text and ratio > 0
+    ]
+    if not available:
+        return None, None
+
+    total = sum(ratio for _, _, ratio in available)
+    roll = random.random() * total
+    acc = 0.0
+    for label, prompt_text, ratio in available:
+        acc += ratio
+        if roll <= acc:
+            return prompt_text, label
+
+    label, prompt_text, _ = available[-1]
+    return prompt_text, label
 
 
 def parse_args():
@@ -667,6 +731,40 @@ def main():
     cfg     = load_config()
     gen_cfg = cfg.get("query_gen_with_topic_skill_profile_config", {})
 
+    # ── 加载 path_discription 配置 ──────────────────────────────────────
+    default_path_ratios = [1.0, 0.0, 0.0]
+    path_prompt_cfg_by_system = {
+        "windows": {
+            "ratios": _normalize_path_discription_ratios(
+                gen_cfg.get("path_discription_abs_ratio_win"),
+                default_path_ratios,
+            ),
+            "prompts": _load_path_discription_prompts(
+                gen_cfg.get("path_discription_prompt_win", [])
+            ),
+        },
+        "linux": {
+            "ratios": _normalize_path_discription_ratios(
+                gen_cfg.get("path_discription_abs_ratio_linux"),
+                default_path_ratios,
+            ),
+            "prompts": _load_path_discription_prompts(
+                gen_cfg.get("path_discription_prompt_linux", [])
+            ),
+        },
+    }
+    if any(any(p for p in cfg_item["prompts"]) for cfg_item in path_prompt_cfg_by_system.values()):
+        print(f"  path_discription_abs_ratio_win: {path_prompt_cfg_by_system['windows']['ratios']}")
+        print(f"  path_discription_abs_ratio_linux: {path_prompt_cfg_by_system['linux']['ratios']}")
+        print(
+            "  path_discription_prompt_win 模板数: "
+            f"{sum(1 for p in path_prompt_cfg_by_system['windows']['prompts'] if p)}"
+        )
+        print(
+            "  path_discription_prompt_linux 模板数: "
+            f"{sum(1 for p in path_prompt_cfg_by_system['linux']['prompts'] if p)}"
+        )
+
     if envs_dir:
         # 加载 Windows 和 Linux 两个 env prompt，后续按 MAP 文件选择
         prompt_rel_win = gen_cfg.get(
@@ -777,6 +875,15 @@ def main():
             else:
                 skills = []
 
+            # ── 决定 path_discription_prompt（每个组合决定一次） ──
+            task_path_discription_abs = None
+            task_path_discription_text = None
+            if envs_dir and env_info is not None:
+                task_path_discription_text, task_path_discription_abs = _choose_path_discription_prompt(
+                    system_type,
+                    path_prompt_cfg_by_system,
+                )
+
             if out_path_str not in file_locks:
                 file_locks[out_path_str] = threading.Lock()
 
@@ -791,6 +898,8 @@ def main():
                 "prompt_tmpl": task_prompt,
                 "system_type": system_type,
                 "use_match_skills": use_match_skills,
+                "path_discription_prompt_text": task_path_discription_text,
+                "path_discription_abs": task_path_discription_abs,
             })
 
     print(f"  共组装 {len(tasks)} 个 task（topic × profile 排列组合）\n")
@@ -820,6 +929,8 @@ def main():
                 num_calls=num_calls,
                 detailed_query_ratio=detailed_query_ratio,
                 simple_query_ratio=simple_query_ratio,
+                path_discription_prompt_text=t["path_discription_prompt_text"],
+                path_discription_abs=t["path_discription_abs"],
             ): t
             for t in tasks
         }

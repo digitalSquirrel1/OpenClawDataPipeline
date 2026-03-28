@@ -154,6 +154,7 @@ def process_single_json(
             skills = result_item["skills"]
             queries = result_item["queries"]
             system_type = result_item.get("system_type")
+            path_discription_abs = result_item.get("path_discription_abs")
 
             skill_rel_paths = []
             for skill_info in skills:
@@ -169,6 +170,10 @@ def process_single_json(
             # 拆分 queries 和 required_skills / required_files / rubrics
             query_strings, required_skills_list, required_files_list, rubrics_list = _normalize_queries(queries)
 
+            # path_discription_abs: 展开为与 queries 等长的列表
+            n_queries = len(query_strings)
+            path_discription_abs_list = [path_discription_abs] * n_queries
+
             all_queries.append({
                 "topic": topic,
                 "system_type": system_type,
@@ -177,6 +182,7 @@ def process_single_json(
                 "required_skills": required_skills_list,
                 "required_files": required_files_list,
                 "rubrics": rubrics_list,
+                "path_discription_abs": path_discription_abs_list,
             })
 
         with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
@@ -196,6 +202,7 @@ def process_single_json(
             skills = result_item["skills"]
             queries = result_item["queries"]
             system_type = result_item.get("system_type")
+            path_discription_abs = result_item.get("path_discription_abs")
 
             folder_name = _sanitize_folder_name(f"{profile_stem}_{topic}")
             pack_dir = output_dir / folder_name
@@ -223,6 +230,10 @@ def process_single_json(
             # 拆分 queries 和 required_skills / required_files / rubrics
             query_strings, required_skills_list, required_files_list, rubrics_list = _normalize_queries(queries)
 
+            # path_discription_abs: 展开为与 queries 等长的列表
+            n_queries = len(query_strings)
+            path_discription_abs_list = [path_discription_abs] * n_queries
+
             user_queries = [{
                 "topic": topic,
                 "system_type": system_type,
@@ -231,6 +242,7 @@ def process_single_json(
                 "required_skills": required_skills_list,
                 "required_files": required_files_list,
                 "rubrics": rubrics_list,
+                "path_discription_abs": path_discription_abs_list,
             }]
             with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
                 json.dump(user_queries, f, ensure_ascii=False, indent=2)

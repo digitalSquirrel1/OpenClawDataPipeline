@@ -89,10 +89,11 @@ def generate_single_config(
     user_dir = {
         "path": relative_user_dir.as_posix(),
         "profile_file": profile_file,
-        "copy_map_not_workspace": copy_map_not_workspace,
     }
     if map_file is not None:
-        user_dir["map_file"] = map_file
+        user_dir["copy_map_not_workspace"] = copy_map_not_workspace
+        if copy_map_not_workspace:
+            user_dir["map_file"] = map_file
 
     return {
         "system": {
