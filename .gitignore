@@ -15,3 +15,4 @@ yes
 yes.pub
 newkey.txt
 .gitignore
+config/baseline_using.yaml
