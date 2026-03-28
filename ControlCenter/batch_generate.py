@@ -9,6 +9,7 @@
   python batch_generate.py
   python batch_generate.py --profiles-dir Outputs/profiles
 """
+from __future__ import annotations
 
 import os, sys, json, argparse, io, threading, contextvars, random
 from pathlib import Path
@@ -111,7 +112,7 @@ _batch_cfg = _cfg.get("batch_generate_config", {})
 
 
 # ─── 工具函数 ─────────────────────────────────────────────────────────────────
-def _resolve(val: str | None, default: Path) -> str:
+def _resolve(val, default) -> str:
     """将 yaml 中的路径解析为绝对路径（相对路径以 _PROJECT_ROOT 为基准）。"""
     if not val:
         return str(default)
