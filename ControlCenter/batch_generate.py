@@ -9,6 +9,7 @@
   python batch_generate.py
   python batch_generate.py --profiles-dir Outputs/profiles
 """
+from __future__ import annotations
 
 import os, sys, json, argparse, io, threading, contextvars, random
 from pathlib import Path
@@ -111,7 +112,7 @@ _batch_cfg = _cfg.get("batch_generate_config", {})
 
 
 # ─── 工具函数 ─────────────────────────────────────────────────────────────────
-def _resolve(val: str | None, default: Path) -> str:
+def _resolve(val, default) -> str:
     """将 yaml 中的路径解析为绝对路径（相对路径以 _PROJECT_ROOT 为基准）。"""
     if not val:
         return str(default)
@@ -177,75 +178,70 @@ def get_profile_info(profile_path: Path) -> dict | None:
         return None
 
 
-def generate_file_mappings(env_path: Path, profile_dir: Path):
+_SKIP_FILES = {"README.md", "README.md.bak", "env_config.json"}
+
+
+def generate_file_mappings(env_path: Path, profile_dir: Path, system_type: str = "windows"):
     """
-    根据生成的环境目录结构，创建 Windows 和 Linux 的文件映射表。
+    根据生成的环境目录结构，创建文件映射表。
 
-    目录结构：profile_dir 下直接存放 C/, D/, E/, Z/ 等盘符目录。
-
-    映射规则（Windows）：X/ → X:\
-    映射规则（Linux）：C/ → ~/, 其余盘符 X/ → ~/X/
+    - system_type="windows": profile_dir 下存放 C/, D/, E/ 等盘符目录，映射 X/ → X:\\
+    - system_type="linux":   profile_dir 下存放 Documents/, Projects/ 等 Linux 目录，
+                             映射 path → ~/path
 
     Args:
         env_path:    MAP JSON 文件的存放目录（env_name 外层）
-        profile_dir: 实际文件系统根目录（包含 C/, D/, E/ 等盘符子目录）
+        profile_dir: 实际文件系统根目录
+        system_type: "windows" 或 "linux"
     """
     if not profile_dir.exists():
         print(f"    [Skip] 未找到文件系统目录，跳过映射表生成")
         return
 
-    # 收集所有文件路径（相对于 profile_dir，只收集盘符子目录下的文件）
+    # 收集文件路径
     file_paths = []
     for file_path in profile_dir.rglob("*"):
-        if file_path.is_file():
-            rel_path = file_path.relative_to(profile_dir)
-            parts = rel_path.parts
-            # 只收录以单字母盘符目录开头的路径（C/, D/, E/, Z/ 等）
+        if not file_path.is_file():
+            continue
+        rel_path = file_path.relative_to(profile_dir)
+        parts = rel_path.parts
+        if system_type == "windows":
+            # Windows: 只收录以单字母盘符目录开头的路径
             if len(parts) >= 2 and len(parts[0]) == 1 and parts[0].isalpha():
+                file_paths.append(str(rel_path).replace("\\", "/"))
+        else:
+            # Linux: 收录所有文件，排除元数据文件
+            if rel_path.name not in _SKIP_FILES:
                 file_paths.append(str(rel_path).replace("\\", "/"))
 
     if not file_paths:
         print(f"    [Skip] 文件系统目录为空，跳过映射表生成")
         return
 
-    # 生成 Windows 映射：X/ → X:\...
-    windows_mapping = {}
-    for path in file_paths:
-        parts = path.split("/", 1)
-        drive = parts[0]  # e.g. "C", "D", "E", "Z"
-        rest = parts[1] if len(parts) > 1 else ""
-        if len(drive) == 1 and drive.isalpha():
-            win_src = drive + ":\\" + rest.replace("/", "\\")
-        else:
-            win_src = path.replace("/", "\\")
-        windows_mapping[path] = win_src
-
-    # 生成 Linux 映射：C/ → ~/, 其余 X/ → ~/X/
-    linux_mapping = {}
-    for path in file_paths:
-        parts = path.split("/", 1)
-        drive = parts[0]
-        rest = parts[1] if len(parts) > 1 else ""
-        if drive == "C":
-            linux_src = "~/" + rest
-        elif len(drive) == 1 and drive.isalpha():
-            linux_src = f"~/{drive}/" + rest
-        else:
-            linux_src = path
-        linux_mapping[path] = linux_src
-
-    # 根据 WINDOWS_MAP_RATIO 概率只输出一个映射文件
-    win_ratio = float(_batch_cfg.get("WINDOWS_MAP_RATIO", 0.7))
-    if random.random() < win_ratio:
+    if system_type == "windows":
+        # Windows 映射：X/ → X:\...
+        mapping = {}
+        for path in file_paths:
+            parts = path.split("/", 1)
+            drive = parts[0]
+            rest = parts[1] if len(parts) > 1 else ""
+            if len(drive) == 1 and drive.isalpha():
+                mapping[path] = drive + ":\\" + rest.replace("/", "\\")
+            else:
+                mapping[path] = path.replace("/", "\\")
         map_path = env_path / "MAP_Windows.json"
         with open(map_path, "w", encoding="utf-8") as f:
-            json.dump(windows_mapping, f, ensure_ascii=False, indent=2)
-        print(f"    → MAP_Windows.json 已生成 ({len(windows_mapping)} 条)")
+            json.dump(mapping, f, ensure_ascii=False, indent=2)
+        print(f"    → MAP_Windows.json 已生成 ({len(mapping)} 条)")
     else:
+        # Linux 映射：path → ~/path
+        mapping = {}
+        for path in file_paths:
+            mapping[path] = "~/" + path
         map_path = env_path / "MAP_Linux.json"
         with open(map_path, "w", encoding="utf-8") as f:
-            json.dump(linux_mapping, f, ensure_ascii=False, indent=2)
-        print(f"    → MAP_Linux.json 已生成 ({len(linux_mapping)} 条)")
+            json.dump(mapping, f, ensure_ascii=False, indent=2)
+        print(f"    → MAP_Linux.json 已生成 ({len(mapping)} 条)")
 
 
 def _pick_query_for_profile(queries_dir: Path, profile_stem: str) -> str | None:
@@ -289,7 +285,11 @@ def generate_env_for_profile(
         return True
 
     # 从头完整生成
-    print(f"  [处理] {env_name}")
+    # 提前决定 Windows / Linux，以便 pipeline 生成对应风格的目录结构
+    win_ratio = float(_batch_cfg.get("WINDOWS_MAP_RATIO", 0.7))
+    system_type = "windows" if random.random() < win_ratio else "linux"
+
+    print(f"  [处理] {env_name} ({system_type})")
     print(f"    画像: {profile_path}")
     print(f"    输出: {env_path}")
 
@@ -299,10 +299,12 @@ def generate_env_for_profile(
             output_dir=env_path,
             profile_dir_name=env_name,
             query=query,
+            system_type=system_type,
         )
         print(f"  [OK] {env_name} 生成成功")
-        fix_readme(profile_dir, collect_disk_files(profile_dir))
-        generate_file_mappings(env_path, profile_dir)
+        fix_readme(profile_dir, collect_disk_files(profile_dir, system_type=system_type),
+                   system_type=system_type)
+        generate_file_mappings(env_path, profile_dir, system_type=system_type)
         return True
     except Exception as e:
         import traceback

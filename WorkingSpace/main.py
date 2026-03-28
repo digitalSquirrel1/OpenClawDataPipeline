@@ -92,6 +92,7 @@ def run_pipeline(
     output_dir: Path | str,
     profile_dir_name: str | None = None,
     query: str | None = None,
+    system_type: str = "windows",
 ) -> dict:
     """
     执行完整的 4 步 pipeline。
@@ -101,6 +102,7 @@ def run_pipeline(
         output_dir:         输出根目录（绝对路径）
         profile_dir_name:   生成的文件系统子目录名。
                             为 None 时自动从分析结果推导（"姓名_职业"）。
+        system_type:        "windows" 或 "linux"，决定目录结构和环境配置风格。
 
     Returns:
         dict  包含 profile_name、profile、created_files、output_dir 等
@@ -171,14 +173,20 @@ def run_pipeline(
         )
         profile["user_query"] = query
 
+    # ── Linux 环境：覆写 os 和 drive_layout 字段 ────────────────────────────
+    if system_type == "linux":
+        profile["os"] = "Ubuntu 22.04.3 LTS"
+        # 将 drive_layout 改为描述 Linux 目录结构的关键目录
+        profile["drive_layout"] = ["Documents", "Projects", "Downloads", "Desktop"]
+
     # 持久化 Step 1 结果，供后续断点续跑使用
     (out_dir / "profile_analyzed.json").write_text(
         json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
     # ── Step 2：设计电脑环境规格 ────────────────────────────────────────────
-    _banner("Step 2 / 3  设计电脑环境")
-    designer = ComputerSpecDesigner(llm)
+    _banner(f"Step 2 / 3  设计电脑环境（{system_type}）")
+    designer = ComputerSpecDesigner(llm, system_type=system_type)
     spec     = designer.design(profile)
 
     # 持久化 Step 2 结果，供后续断点续跑使用

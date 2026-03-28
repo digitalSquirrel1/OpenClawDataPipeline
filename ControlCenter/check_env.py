@@ -23,18 +23,28 @@ from pathlib import Path
 DRIVE_LETTERS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 
-def collect_disk_files(profile_dir: Path) -> set:
+_SKIP_FILES = {"README.md", "README.md.bak", "env_config.json"}
+
+
+def collect_disk_files(profile_dir: Path, system_type: str = "windows") -> set:
     """
-    扫描 profile_dir 下所有单字母驱动器目录中的文件，
-    返回相对路径集合（使用 / 分隔，如 D/foo/bar.pdf）。
+    扫描 profile_dir 下的文件，返回相对路径集合（使用 / 分隔）。
+
+    - system_type="windows": 只收集单字母驱动器目录（C/, D/, E/ 等）下的文件
+    - system_type="linux":   收集所有文件，排除元数据文件（README.md 等）
     """
     files = set()
-    for entry in profile_dir.iterdir():
-        if entry.is_dir() and len(entry.name) == 1 and entry.name.upper() in DRIVE_LETTERS:
-            for f in entry.rglob("*"):
-                if f.is_file():
-                    rel = f.relative_to(profile_dir)
-                    files.add(str(rel).replace("\\", "/"))
+    if system_type == "linux":
+        for f in profile_dir.rglob("*"):
+            if f.is_file() and f.name not in _SKIP_FILES:
+                files.add(str(f.relative_to(profile_dir)).replace("\\", "/"))
+    else:
+        for entry in profile_dir.iterdir():
+            if entry.is_dir() and len(entry.name) == 1 and entry.name.upper() in DRIVE_LETTERS:
+                for f in entry.rglob("*"):
+                    if f.is_file():
+                        rel = f.relative_to(profile_dir)
+                        files.add(str(rel).replace("\\", "/"))
     return files
 
 
@@ -105,7 +115,7 @@ def check_env(profile_dir: Path):
     return disk_files, readme_files
 
 
-def fix_readme(profile_dir: Path, disk_files: set):
+def fix_readme(profile_dir: Path, disk_files: set, system_type: str = "windows"):
     """
     以磁盘文件为准，修复 README.md：
     1. ## 文件清单：
@@ -178,15 +188,22 @@ def fix_readme(profile_dir: Path, disk_files: set):
         kept = []
         for line in lines:
             stripped = line.strip()
-            # 只检查看起来像路径的行（以单字母/开头）
-            if (
-                len(stripped) >= 2
-                and stripped[0].upper() in DRIVE_LETTERS
-                and stripped[1] == "/"
-            ):
-                if stripped not in disk_dirs:
-                    removed_dirs.append(stripped)
-                    continue  # 删除此行
+            if system_type == "windows":
+                # Windows: 只检查以单字母/开头的行
+                if (
+                    len(stripped) >= 2
+                    and stripped[0].upper() in DRIVE_LETTERS
+                    and stripped[1] == "/"
+                ):
+                    if stripped not in disk_dirs:
+                        removed_dirs.append(stripped)
+                        continue
+            else:
+                # Linux: 非空、含 / 的路径行（排除代码块标记）
+                if stripped and "/" in stripped and not stripped.startswith("`"):
+                    if stripped not in disk_dirs:
+                        removed_dirs.append(stripped)
+                        continue
             kept.append(line)
         return "".join(kept)
 
