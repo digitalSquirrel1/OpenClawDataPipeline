@@ -29,6 +29,7 @@ standard_format.py — 将 queries_with_skills 目录下的 JSON 文件标准化
       --info-dir Outputs/queries_with_skills \
       --envs-dir Outputs/environments
 """
+from __future__ import annotations
 
 import os, sys, json, argparse, shutil, zipfile
 from pathlib import Path
@@ -243,8 +244,8 @@ def process_single_json(
         with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
             json.dump(all_queries, f, ensure_ascii=False, indent=2)
 
-        # 删除该 env 目录下的 zip 文件（内容已变更，旧 zip 失效）
-        for zip_file in pack_dir.glob("*.zip"):
+        # 删除该 env 目录下的 standard_output*.zip 文件（内容已变更，旧 zip 失效）
+        for zip_file in pack_dir.glob("standard_output*.zip"):
             zip_file.unlink()
             print(f"    [删除旧 zip] {zip_file.name}")
 
@@ -315,6 +316,59 @@ def _long_path(p: Path) -> str:
     return s
 
 
+def _detect_system_type(env_dir: Path) -> str | None:
+    """检测环境的系统类型（基于 MAP_Linux.json 或 MAP_Windows.json）。
+
+    Returns:
+        "linux" 如果存在 MAP_Linux.json
+        "windows" 如果存在 MAP_Windows.json
+        None 如果两者都不存在
+    """
+    if (env_dir / "MAP_Linux.json").exists():
+        return "linux"
+    if (env_dir / "MAP_Windows.json").exists():
+        return "windows"
+    return None
+
+
+def _zip_dirs(dirs_to_pack: list[Path], zip_path: Path, base_dir: Path, system_type: str) -> None:
+    """将指定的目录列表打包成 zip 文件。
+
+    Args:
+        dirs_to_pack: 待打包的目录列表
+        zip_path: 输出 zip 文件路径
+        base_dir: 计算相对路径的基础目录
+        system_type: 系统类型标签（用于日志输出）
+    """
+    if not dirs_to_pack:
+        return
+
+    # 先收集所有待打包文件
+    all_files = []
+    for dir_path in dirs_to_pack:
+        for file in sorted(dir_path.rglob("*")):
+            if file.is_file():
+                all_files.append((file, file.relative_to(base_dir).as_posix()))
+
+    total = len(all_files)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, (file, arcname) in enumerate(all_files, 1):
+            try:
+                with open(_long_path(file), "rb") as fh:
+                    zf.writestr(arcname, fh.read())
+            except OSError as e:
+                # \\?\前缀对路径格式要求严格，回退到 pathlib 原生读取
+                try:
+                    zf.writestr(arcname, file.read_bytes())
+                except OSError:
+                    raise OSError(
+                        f"{e} — 文件无法读取，路径 repr: {file!r}"
+                    ) from e
+            if i % 50 == 0 or i == total:
+                print(f"\r  打包进度 ({system_type}): {i}/{total} ({i*100//total}%)", end="", flush=True)
+    print(f"\n已打包 zip ({system_type}): {zip_path}  ({len(dirs_to_pack)} 个环境目录, {total} 个文件)")
+
+
 def run(
     info_dir: Path,
     profiles_dir: Path,
@@ -353,35 +407,35 @@ def run(
 
     # ── 最终打包为 zip ──
     if envs_dir is not None:
-        # env + skills 模式：将 envs_dir 下所有包含 user_queries.json 的子目录打入 zip
-        zip_path = envs_dir / "standard_output.zip"
+        # env + skills 模式：将 envs_dir 下所有包含 user_queries.json 的子目录按系统类型分拆打入 zip
         dirs_to_pack = sorted(
             p.parent for p in envs_dir.rglob("user_queries.json")
         )
         if dirs_to_pack:
-            # 先收集所有待打包文件
-            all_files = []
+            # 按系统类型分类（基于 MAP_Linux.json 或 MAP_Windows.json）
+            linux_dirs = []
+            windows_dirs = []
             for dir_path in dirs_to_pack:
-                for file in sorted(dir_path.rglob("*")):
-                    if file.is_file():
-                        all_files.append((file, file.relative_to(envs_dir).as_posix()))
-            total = len(all_files)
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for i, (file, arcname) in enumerate(all_files, 1):
-                    try:
-                        with open(_long_path(file), "rb") as fh:
-                            zf.writestr(arcname, fh.read())
-                    except OSError as e:
-                        # \\?\前缀对路径格式要求严格，回退到 pathlib 原生读取
-                        try:
-                            zf.writestr(arcname, file.read_bytes())
-                        except OSError:
-                            raise OSError(
-                                f"{e} — 文件无法读取，路径 repr: {file!r}"
-                            ) from e
-                    if i % 50 == 0 or i == total:
-                        print(f"\r  打包进度: {i}/{total} ({i*100//total}%)", end="", flush=True)
-            print(f"\n已打包 zip: {zip_path}  ({len(dirs_to_pack)} 个环境目录, {total} 个文件)")
+                system_type = _detect_system_type(dir_path)
+                if system_type == "linux":
+                    linux_dirs.append(dir_path)
+                elif system_type == "windows":
+                    windows_dirs.append(dir_path)
+                else:
+                    print(f"  [Warning] 未检测到系统类型，跳过: {dir_path.name}")
+
+            # 分别打包 Linux 和 Windows 环境
+            if linux_dirs:
+                linux_zip = envs_dir / "standard_output_linux.zip"
+                _zip_dirs(linux_dirs, linux_zip, envs_dir, "linux")
+            else:
+                print("  [Info] 未找到 Linux 环境")
+
+            if windows_dirs:
+                windows_zip = envs_dir / "standard_output_windows.zip"
+                _zip_dirs(windows_dirs, windows_zip, envs_dir, "windows")
+            else:
+                print("  [Info] 未找到 Windows 环境")
         else:
             print("[Warning] envs_dir 下未找到包含 user_queries.json 的目录，跳过打包")
     else:

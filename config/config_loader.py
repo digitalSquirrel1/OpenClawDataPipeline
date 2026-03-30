@@ -11,6 +11,7 @@ Usage (from any file in the project):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # adjust depth
     from config.config_loader import load_config, get_prompt
 """
+from __future__ import annotations
 
 import os
 from pathlib import Path
