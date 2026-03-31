@@ -73,7 +73,7 @@ def generate_single_config(
     api_key: str | None,
     timeout: int,
     copy_map_not_workspace_ratio: float,
-    hw_net_range: str,
+    agents_config: list,
 ) -> dict:
     """为单条 query 生成一份完整配置"""
     agent_name = f"assistant{agent_index}"
@@ -109,7 +109,6 @@ def generate_single_config(
     return {
         "system": {
             "platform": [platform] if platform is not None else [],
-            "hw_net_range": hw_net_range,
             "python": "3.12",
             "tools": []
         },
@@ -121,7 +120,7 @@ def generate_single_config(
         "agents": [
             {
                 "name": agent_name,
-                "config": [],
+                "config": list(agents_config),
                 "skills": converted_skills,
                 "system_prompt": None,
                 "model": model
@@ -177,8 +176,8 @@ def main():
     parser.add_argument("--timeout",          type=int, default=None, help="每条 query 超时时间（秒，默认 3600）")
     parser.add_argument("--copy-map-not-workspace-ratio", type=float, default=None,
                         help="当 path_discription_abs 不是 abs 时，输出 map_file 的概率，默认 0.5")
-    parser.add_argument("--hw-net-range", default=None, choices=["green", "blue"],
-                        help="hw_net_range，可选 green/blue，默认 green")
+    parser.add_argument("--agents-config", nargs="*", default=None,
+                        help="agents config 文件名列表，如 TOOLS.md（默认空列表）")
     args = parser.parse_args()
 
     # ── 三级合并：yaml > CLI > hardcoded default ─────────────────────────────
@@ -195,10 +194,7 @@ def main():
     args.copy_map_not_workspace_ratio = _get_param(
         "copy_map_not_workspace_ratio", args.copy_map_not_workspace_ratio, 0.5, cast=float
     )
-    args.hw_net_range = _get_param("hw_net_range", args.hw_net_range, "green")
-
-    if args.hw_net_range not in ("green", "blue"):
-        raise ValueError(f"--hw-net-range 必须是 green 或 blue，当前值: {args.hw_net_range}")
+    args.agents_config = _get_param("agents_config", args.agents_config, [])
 
     if not 0 <= args.copy_map_not_workspace_ratio <= 1:
         raise ValueError("--copy-map-not-workspace-ratio 必须在 0 到 1 之间")
@@ -264,7 +260,7 @@ def main():
                         api_key=args.api_key,
                         timeout=args.timeout,
                         copy_map_not_workspace_ratio=args.copy_map_not_workspace_ratio,
-                        hw_net_range=args.hw_net_range,
+                        agents_config=args.agents_config,
                     )
                     out_file = output_dir / f"{folder.name}_{safe_topic}_q{q_idx}.json"
                     out_file.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")

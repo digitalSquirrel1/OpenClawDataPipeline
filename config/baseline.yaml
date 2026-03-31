@@ -123,10 +123,10 @@ standard_format_config: # 有env打包，标准格式化打包，直接写入 en
 #   skills_dir: null
 
 generate_config: # generate_configs.py 批量生成 AutomationConfig
-  input: "Outputs/260327/env_configs/linux2/environments"
-  output: "Outputs/260327/env_configs/linux2/configs"
+  input: "Outputs/260327/env_configs/linux_260331/environments"
+  output: "Outputs/260327/env_configs/linux_260331/configs"
   skill_dir: "skill_localize/skills_library"
-  agent_dir: "agents"
+  agent_dir: "/home/ma-user/workspace/openclaw-task/agents"
   simulator_config: "configs/user_proxy_model.json"
   workspace: "~/.openclaw/workspace"
   model: "claude-3-5-sonnet"
@@ -134,4 +134,4 @@ generate_config: # generate_configs.py 批量生成 AutomationConfig
   api_key: null
   timeout: 3600
   copy_map_not_workspace_ratio: 0.5
-  hw_net_range: "blue"  # 注意修改蓝绿区green | blue
+  agents_config: ["TOOLS.md"] # 需要从agent_dir复制到workspace里面的agent设定文件名，没有就写[]
