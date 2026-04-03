@@ -11,8 +11,7 @@ Log/*
 WorkingSpace/output/
 # keys
 config/baseline_using.yaml
+config/b.yaml
 yes
 yes.pub
 newkey.txt
-.gitignore
-config/baseline_using.yaml
