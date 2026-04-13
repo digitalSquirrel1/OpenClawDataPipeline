@@ -97,6 +97,22 @@ query_gen_with_topic_skill_profile_config:
 #   PROMPT_TMPL_ENV: "prompts/query_gen_with_topic_skill_profile_env_prompt.md"
 #   PROMPT_TMPL_ENV_LINUX: "prompts/query_gen_with_topic_skill_profile_env_linux_prompt.md"
 
+browser_dep_config: # 浏览器交互 query 生成
+  topics_txt_path: "Examples/topics.txt"
+  profiles_dir: "Outputs/profiles"
+  output_dir: "Outputs/browser_dep_queries"
+  queries_per_combination: 10
+  max_agent_turns: 8
+  subtopics_per_batch: 2
+  max_search_concurrency: 5
+  max_visit_concurrency: 3
+  skip_existing: true
+  ratio_mention_specific_website: 0.2 # query 中直接提及目标网站名称的比例
+  STEP1_PROMPT: "prompts/browser_dep/step1_subtopic_gen.md"
+  STEP2_SYSTEM_PROMPT: "prompts/browser_dep/step2_system.md"
+  STEP2_USER_PROMPT: "prompts/browser_dep/step2_user.md"
+  STEP3_PROMPT: "prompts/browser_dep/step3_query_gen.md"
+
 skill_reviewer_config:
   target_dir: "Outputs/skill_localize/skills_library"
   concurrency: 50
