@@ -36,8 +36,8 @@ def move_one(src: Path, dst: Path) -> str:
 
 
 def main():
-    ENV_PATH = r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260324\environments"
-    OUTPUT_PATH = r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260324\sorted_environments"
+    ENV_PATH = r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260408\environments"
+    OUTPUT_PATH = r"D:\PythonProject\OpenClawDataPipeline\user_simulator_agent\Outputs\260408\env_configs"
 
     env_path = Path(ENV_PATH)
     output_path = Path(OUTPUT_PATH)

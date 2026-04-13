@@ -46,22 +46,24 @@ def _resolve(rel_or_none: str | None, default_rel: str) -> Path:
     return p if p.is_absolute() else (_PROJECT_ROOT / p).resolve()
 
 
-def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[list[str]], list[list[str]]]:
-    """将 queries 列表拆分为纯字符串列表和对应的 required_skills、required_files、rubrics 列表。
+def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[list[str]], list[list[str]], list[list[str]]]:
+    """将 queries 列表拆分为纯字符串列表和对应的元数据列表。
 
-    兼容旧格式（纯字符串列表）和新格式（字典列表）。
+    兼容旧格式（纯字符串列表）、新格式（字典列表）和 browser_dep 格式。
 
     Returns:
-        (query_strings, required_skills_list, required_files_list, rubrics_list)
+        (query_strings, required_skills_list, required_files_list, rubrics_list, ref_websites_list)
         - query_strings: list[str]，每个 query 的文本
         - required_skills_list: list[list[str]]，与 query_strings 一一对应的技能列表
         - required_files_list: list[list[str]]，与 query_strings 一一对应的文件列表
         - rubrics_list: list[list[str]]，与 query_strings 一一对应的质检标准列表
+        - ref_websites_list: list[list[str]]，与 query_strings 一一对应的参考网站列表
     """
     query_strings = []
     required_skills_list = []
     required_files_list = []
     rubrics_list = []
+    ref_websites_list = []
     def _to_str_list(val) -> list[str]:
         if val is None:
             return []
@@ -77,6 +79,7 @@ def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[
             required_skills_list.append([])
             required_files_list.append([])
             rubrics_list.append([])
+            ref_websites_list.append([])
         elif isinstance(item, dict):
             query_strings.append(item.get("queries", ""))
             required_skills_list.append(_to_str_list(item.get("required_skills", [])))
@@ -85,9 +88,10 @@ def _normalize_queries(queries: list) -> tuple[list[str], list[list[str]], list[
                 required_files = item.get("required_file", item.get("files", []))
             required_files_list.append(_to_str_list(required_files))
             rubrics_list.append(_to_str_list(item.get("rubrics", [])))
+            ref_websites_list.append(_to_str_list(item.get("ref_websites", [])))
         else:
             raise ValueError(f"queries 元素格式异常: {type(item)} — {item}")
-    return query_strings, required_skills_list, required_files_list, rubrics_list
+    return query_strings, required_skills_list, required_files_list, rubrics_list, ref_websites_list
 
 
 def _build_profile_to_env_map(envs_dir: Path, profiles_dir: Path) -> dict[str, str]:
@@ -222,8 +226,8 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel)
 
-            # 拆分 queries 和 required_skills / required_files / rubrics
-            query_strings, required_skills_list, required_files_list, rubrics_list = _normalize_queries(queries)
+            # 拆分 queries 和 required_skills / required_files / rubrics / ref_websites
+            query_strings, required_skills_list, required_files_list, rubrics_list, ref_websites_list = _normalize_queries(queries)
 
             # path_discription_abs: 展开为与 queries 等长的列表
             n_queries = len(query_strings)
@@ -237,6 +241,7 @@ def process_single_json(
                 "required_skills": required_skills_list,
                 "required_files": required_files_list,
                 "rubrics": rubrics_list,
+                "ref_websites": ref_websites_list,
                 "path_discription_abs": path_discription_abs_list,
             })
 
@@ -282,8 +287,8 @@ def process_single_json(
                     )
                 skill_rel_paths.append(skill_rel)
 
-            # 拆分 queries 和 required_skills / required_files / rubrics
-            query_strings, required_skills_list, required_files_list, rubrics_list = _normalize_queries(queries)
+            # 拆分 queries 和 required_skills / required_files / rubrics / ref_websites
+            query_strings, required_skills_list, required_files_list, rubrics_list, ref_websites_list = _normalize_queries(queries)
 
             # path_discription_abs: 展开为与 queries 等长的列表
             n_queries = len(query_strings)
@@ -297,7 +302,102 @@ def process_single_json(
                 "required_skills": required_skills_list,
                 "required_files": required_files_list,
                 "rubrics": rubrics_list,
+                "ref_websites": ref_websites_list,
                 "path_discription_abs": path_discription_abs_list,
+            }]
+            with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
+                json.dump(user_queries, f, ensure_ascii=False, indent=2)
+
+            created_folders.append(str(pack_dir))
+
+    return created_folders
+
+
+# ─── browser_dep 格式支持 ──────────────────────────────────────────────────────
+
+def _detect_info_format(info_dir: Path) -> str:
+    """检测 info_dir 的数据格式。
+
+    Returns:
+        "flat"        — 传统格式：info_dir 下直接存放 *_queries.json
+        "browser_dep" — browser_dep 格式：info_dir/{profile}/{topic}/step3_queries.json
+    """
+    # 有顶层 JSON 文件 → 传统格式
+    if any(info_dir.glob("*.json")):
+        return "flat"
+    # 有嵌套的 step3_queries.json → browser_dep 格式
+    if any(info_dir.glob("*/*/step3_queries.json")):
+        return "browser_dep"
+    return "flat"
+
+
+def process_browser_dep(
+    info_dir: Path,
+    profiles_dir: Path,
+    output_dir: Path,
+) -> list[str]:
+    """处理 browser_dep 格式的 info_dir，输出到 output_dir（纯 output_dir 模式）。
+
+    目录结构:
+        info_dir/{profile_stem}/{topic_sanitized}/step3_queries.json
+
+    输出:
+        output_dir/{profile_stem}_{topic}/
+            ├── {profile_stem}.json   (profile 副本)
+            └── user_queries.json
+    """
+    created_folders = []
+
+    for profile_subdir in sorted(info_dir.iterdir()):
+        if not profile_subdir.is_dir():
+            continue
+        profile_stem = profile_subdir.name
+
+        # 查找对应的 profile 文件
+        profile_file = profiles_dir / f"{profile_stem}.json"
+        if not profile_file.exists():
+            print(f"    [Warning] profile 文件不存在，跳过: {profile_file}")
+            continue
+
+        for topic_subdir in sorted(profile_subdir.iterdir()):
+            if not topic_subdir.is_dir():
+                continue
+
+            step3_path = topic_subdir / "step3_queries.json"
+            if not step3_path.exists():
+                continue
+
+            data = json.loads(step3_path.read_text(encoding="utf-8"))
+            topic = data.get("topic", topic_subdir.name)
+            queries = data.get("queries", [])
+
+            if not queries:
+                print(f"    [Warning] 无 query，跳过: {step3_path}")
+                continue
+
+            # 拆分 queries
+            query_strings, required_skills_list, required_files_list, rubrics_list, ref_websites_list = _normalize_queries(queries)
+            n_queries = len(query_strings)
+
+            # 创建输出文件夹
+            folder_name = _sanitize_folder_name(f"{profile_stem}_{topic}")
+            pack_dir = output_dir / folder_name
+            pack_dir.mkdir(parents=True, exist_ok=True)
+
+            # 复制 profile
+            shutil.copy2(profile_file, pack_dir / profile_file.name)
+
+            # 写 user_queries.json
+            user_queries = [{
+                "topic": topic,
+                "system_type": None,
+                "queries": query_strings,
+                "skills": [],
+                "required_skills": required_skills_list,
+                "required_files": required_files_list,
+                "rubrics": rubrics_list,
+                "ref_websites": ref_websites_list,
+                "path_discription_abs": [None] * n_queries,
             }]
             with open(pack_dir / "user_queries.json", "w", encoding="utf-8") as f:
                 json.dump(user_queries, f, ensure_ascii=False, indent=2)
@@ -322,36 +422,59 @@ def run(
     output_dir: Path | None,
     envs_dir: Path | None,
 ):
-    """遍历 info_dir 下所有 JSON 文件并标准化打包。"""
+    """遍历 info_dir 下所有 JSON 文件并标准化打包。
+
+    自动检测 info_dir 格式:
+      - "flat": 传统格式，info_dir 下直接存放 *_queries.json
+      - "browser_dep": browser_dep 格式，info_dir/{profile}/{topic}/step3_queries.json
+    """
 
     if not info_dir.exists():
         raise FileNotFoundError(f"输入目录不存在: {info_dir}")
 
-    json_files = sorted(info_dir.glob("*.json"))
-    if not json_files:
-        print(f"[Warning] 输入目录下没有 JSON 文件: {info_dir}")
-        return
+    # ── 检测格式 ──
+    fmt = _detect_info_format(info_dir)
+    print(f"  检测到 info_dir 格式: {fmt}")
 
-    if output_dir is not None:
+    if fmt == "browser_dep":
+        # ── browser_dep 格式：当前仅支持纯 output_dir 模式 ──
+        assert output_dir is not None, (
+            "browser_dep 格式目前仅支持 --output-dir 模式（不支持 --envs-dir）"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── 构建 profile → env 映射（用于自动补充 env_rel_path）──
-    profile_env_map: dict[str, str] | None = None
-    if envs_dir is not None:
-        profile_env_map = _build_profile_to_env_map(envs_dir, profiles_dir)
-        print(f"  已构建 profile→env 映射: {len(profile_env_map)} 条")
-
-    total_folders = 0
-    for json_path in json_files:
-        print(f"  处理: {json_path.name}")
-        folders = process_single_json(json_path, profiles_dir, skills_dir, output_dir, envs_dir, profile_env_map)
-        total_folders += len(folders)
-        for f in folders:
+        created_folders = process_browser_dep(info_dir, profiles_dir, output_dir)
+        total_folders = len(created_folders)
+        for f in created_folders:
             print(f"    -> {Path(f).name}")
+        print(f"\n完成: 共生成 {total_folders} 个打包文件夹 (browser_dep 模式)")
 
-    print(f"\n完成: 共处理 {len(json_files)} 个文件, 生成 {total_folders} 个打包文件夹")
+    else:
+        # ── 传统 flat 格式 ──
+        json_files = sorted(info_dir.glob("*.json"))
+        if not json_files:
+            print(f"[Warning] 输入目录下没有 JSON 文件: {info_dir}")
+            return
 
-    # ── 最终打包为 zip ──
+        if output_dir is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 构建 profile → env 映射（用于自动补充 env_rel_path）
+        profile_env_map: dict[str, str] | None = None
+        if envs_dir is not None:
+            profile_env_map = _build_profile_to_env_map(envs_dir, profiles_dir)
+            print(f"  已构建 profile→env 映射: {len(profile_env_map)} 条")
+
+        total_folders = 0
+        for json_path in json_files:
+            print(f"  处理: {json_path.name}")
+            folders = process_single_json(json_path, profiles_dir, skills_dir, output_dir, envs_dir, profile_env_map)
+            total_folders += len(folders)
+            for f in folders:
+                print(f"    -> {Path(f).name}")
+
+        print(f"\n完成: 共处理 {len(json_files)} 个文件, 生成 {total_folders} 个打包文件夹")
+
+    # ── 最终打包为 zip（两种格式共用）──
     if envs_dir is not None:
         # env + skills 模式：将 envs_dir 下所有包含 user_queries.json 的子目录打入 zip
         zip_path = envs_dir / "standard_output.zip"
